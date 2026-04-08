@@ -1,0 +1,4 @@
+pandas>=2.0,<3.0
+matplotlib>=3.7,<4.0
+notebook>=7.0,<8.0
+pydantic>=2.0,<3.0
