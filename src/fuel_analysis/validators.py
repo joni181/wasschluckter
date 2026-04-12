@@ -2,21 +2,26 @@
 
 Validation policy:
 - Hard errors: data that cannot be loaded or is structurally invalid.
-  Examples: duplicate event_id, unparsable datetime, negative amounts,
-  invalid fuel_type, invalid country code, missing required columns.
+  Examples: unparsable datetime, negative amounts, invalid fuel_type,
+  invalid country code, missing required columns.
 - Soft warnings: data that is loadable but suspicious.
   Examples: price consistency mismatch beyond tolerance, suspiciously
   high/low price per liter, odometer monotonicity violations,
-  potential duplicate entries.
+  potential duplicate entries (based on datetime proximity + values).
 
 Hard errors prevent the record from being included in analysis.
 Warnings are collected and reported but do not block loading.
+
+Duplicate detection: instead of requiring manually maintained unique IDs,
+duplicates are detected by comparing datetime proximity (±20 minutes for
+fuel events) combined with matching liters values. For odometer events,
+datetime proximity (±20 minutes) combined with matching odometer_km is used.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from .config import (
@@ -32,6 +37,10 @@ from .models import (
     OdometerRecord,
 )
 
+# Tolerance for duplicate detection: two events within this window
+# with matching key values are flagged as potential duplicates.
+DUPLICATE_TIME_TOLERANCE = timedelta(minutes=20)
+
 
 @dataclass
 class ValidationIssue:
@@ -39,7 +48,6 @@ class ValidationIssue:
 
     severity: str  # "error" or "warning"
     row: Optional[int]  # 1-based row number in CSV (None for dataset-level)
-    event_id: Optional[str]
     field: Optional[str]
     message: str
 
@@ -66,19 +74,17 @@ class ValidationResult:
         self,
         message: str,
         row: Optional[int] = None,
-        event_id: Optional[str] = None,
         field: Optional[str] = None,
     ) -> None:
-        self.issues.append(ValidationIssue("error", row, event_id, field, message))
+        self.issues.append(ValidationIssue("error", row, field, message))
 
     def add_warning(
         self,
         message: str,
         row: Optional[int] = None,
-        event_id: Optional[str] = None,
         field: Optional[str] = None,
     ) -> None:
-        self.issues.append(ValidationIssue("warning", row, event_id, field, message))
+        self.issues.append(ValidationIssue("warning", row, field, message))
 
     def summary(self) -> str:
         lines = [
@@ -91,20 +97,20 @@ class ValidationResult:
         return "\n".join(lines)
 
 
-def _parse_datetime(value: str, row: int, event_id: str, result: ValidationResult) -> Optional[datetime]:
+def _parse_datetime(value: str, row: int, result: ValidationResult) -> Optional[datetime]:
     """Parse an ISO-like datetime string. Returns None on failure."""
     try:
         return datetime.fromisoformat(value.strip())
     except (ValueError, AttributeError):
         result.add_error(
             f"Unparsable datetime: '{value}'",
-            row=row, event_id=event_id, field="datetime",
+            row=row, field="datetime",
         )
         return None
 
 
 def _parse_positive_float(
-    value: str, field_name: str, row: int, event_id: str, result: ValidationResult
+    value: str, field_name: str, row: int, result: ValidationResult
 ) -> Optional[float]:
     """Parse a positive float value. Returns None on failure."""
     try:
@@ -112,20 +118,20 @@ def _parse_positive_float(
     except (ValueError, TypeError):
         result.add_error(
             f"Invalid numeric value for {field_name}: '{value}'",
-            row=row, event_id=event_id, field=field_name,
+            row=row, field=field_name,
         )
         return None
     if num <= 0:
         result.add_error(
             f"{field_name} must be positive, got {num}",
-            row=row, event_id=event_id, field=field_name,
+            row=row, field=field_name,
         )
         return None
     return num
 
 
 def _parse_non_negative_float(
-    value: str, field_name: str, row: int, event_id: str, result: ValidationResult
+    value: str, field_name: str, row: int, result: ValidationResult
 ) -> Optional[float]:
     """Parse a non-negative float value. Returns None on failure."""
     try:
@@ -133,13 +139,13 @@ def _parse_non_negative_float(
     except (ValueError, TypeError):
         result.add_error(
             f"Invalid numeric value for {field_name}: '{value}'",
-            row=row, event_id=event_id, field=field_name,
+            row=row, field=field_name,
         )
         return None
     if num < 0:
         result.add_error(
             f"{field_name} must be non-negative, got {num}",
-            row=row, event_id=event_id, field=field_name,
+            row=row, field=field_name,
         )
         return None
     return num
@@ -155,21 +161,16 @@ def validate_fuel_row(
 
     Returns a FuelRecord on success, None if hard errors were found.
     """
-    event_id = row_data.get("event_id", "").strip()
-    if not event_id:
-        result.add_error("Missing event_id", row=row_number, field="event_id")
-        return None
-
-    dt = _parse_datetime(row_data.get("datetime", ""), row_number, event_id, result)
+    dt = _parse_datetime(row_data.get("datetime", ""), row_number, result)
     amount = _parse_positive_float(
-        row_data.get("amount_eur", ""), "amount_eur", row_number, event_id, result
+        row_data.get("amount_eur", ""), "amount_eur", row_number, result
     )
     liters = _parse_positive_float(
-        row_data.get("liters", ""), "liters", row_number, event_id, result
+        row_data.get("liters", ""), "liters", row_number, result
     )
     price = _parse_positive_float(
         row_data.get("price_per_liter_eur", ""), "price_per_liter_eur",
-        row_number, event_id, result,
+        row_number, result,
     )
 
     # Fuel type validation.
@@ -178,7 +179,7 @@ def validate_fuel_row(
     if fuel_type_str not in ALLOWED_FUEL_TYPES:
         result.add_error(
             f"Invalid fuel_type: '{fuel_type_str}'. Allowed: {sorted(ALLOWED_FUEL_TYPES)}",
-            row=row_number, event_id=event_id, field="fuel_type",
+            row=row_number, field="fuel_type",
         )
     else:
         fuel_type = FuelType(fuel_type_str)
@@ -188,7 +189,7 @@ def validate_fuel_row(
     try:
         is_full_tank = FullTankStatus.from_csv_value(is_full_tank_str)
     except ValueError as e:
-        result.add_error(str(e), row=row_number, event_id=event_id, field="is_full_tank")
+        result.add_error(str(e), row=row_number, field="is_full_tank")
         return None
 
     # Station name (required).
@@ -196,7 +197,7 @@ def validate_fuel_row(
     if not station_name:
         result.add_error(
             "Missing station_name",
-            row=row_number, event_id=event_id, field="station_name",
+            row=row_number, field="station_name",
         )
 
     # City (required, but allow empty with warning).
@@ -204,7 +205,7 @@ def validate_fuel_row(
     if not city:
         result.add_warning(
             "Missing city value",
-            row=row_number, event_id=event_id, field="city",
+            row=row_number, field="city",
         )
 
     # Country validation.
@@ -212,14 +213,14 @@ def validate_fuel_row(
     if not COUNTRY_CODE_PATTERN.match(country):
         result.add_error(
             f"Invalid country code format: '{country}'. Expected 2-letter ISO code.",
-            row=row_number, event_id=event_id, field="country",
+            row=row_number, field="country",
         )
         country = ""
     elif country not in REQUIRED_COUNTRY_CODES:
         # Accept valid ISO format but warn if not in primary set.
         result.add_warning(
             f"Country '{country}' is not in the primary set {sorted(REQUIRED_COUNTRY_CODES)}",
-            row=row_number, event_id=event_id, field="country",
+            row=row_number, field="country",
         )
 
     notes = row_data.get("notes", "").strip()
@@ -237,23 +238,22 @@ def validate_fuel_row(
             f"Price inconsistency: amount_eur={amount:.2f} but "
             f"liters*price={expected_amount:.2f} "
             f"(diff={abs(expected_amount - amount):.2f})",
-            row=row_number, event_id=event_id, field="amount_eur",
+            row=row_number, field="amount_eur",
         )
 
     # Suspicious price warnings.
     if price < config.price_per_liter_min_warn:
         result.add_warning(
             f"Suspiciously low price per liter: {price:.3f} EUR",
-            row=row_number, event_id=event_id, field="price_per_liter_eur",
+            row=row_number, field="price_per_liter_eur",
         )
     if price > config.price_per_liter_max_warn:
         result.add_warning(
             f"Suspiciously high price per liter: {price:.3f} EUR",
-            row=row_number, event_id=event_id, field="price_per_liter_eur",
+            row=row_number, field="price_per_liter_eur",
         )
 
     return FuelRecord(
-        event_id=event_id,
         datetime=dt,
         amount_eur=amount,
         liters=liters,
@@ -276,14 +276,9 @@ def validate_odometer_row(
 
     Returns an OdometerRecord on success, None if hard errors were found.
     """
-    event_id = row_data.get("event_id", "").strip()
-    if not event_id:
-        result.add_error("Missing event_id", row=row_number, field="event_id")
-        return None
-
-    dt = _parse_datetime(row_data.get("datetime", ""), row_number, event_id, result)
+    dt = _parse_datetime(row_data.get("datetime", ""), row_number, result)
     odometer_km = _parse_non_negative_float(
-        row_data.get("odometer_km", ""), "odometer_km", row_number, event_id, result
+        row_data.get("odometer_km", ""), "odometer_km", row_number, result
     )
     notes = row_data.get("notes", "").strip()
 
@@ -291,7 +286,6 @@ def validate_odometer_row(
         return None
 
     return OdometerRecord(
-        event_id=event_id,
         datetime=dt,
         odometer_km=odometer_km,
         notes=notes,
@@ -311,28 +305,22 @@ def validate_fuel_dataset(
 
     result = ValidationResult()
     records: list[FuelRecord] = []
-    seen_ids: set[str] = set()
 
     for i, row_data in enumerate(rows):
         row_number = i + 2  # 1-based, accounting for header row
         record = validate_fuel_row(row_data, row_number, config, result)
         if record is not None:
-            if record.event_id in seen_ids:
-                result.add_error(
-                    f"Duplicate event_id: '{record.event_id}'",
-                    row=row_number, event_id=record.event_id, field="event_id",
-                )
-            else:
-                seen_ids.add(record.event_id)
-                records.append(record)
+            records.append(record)
 
-    # Duplicate detection heuristic: same datetime and same station.
+    # Duplicate detection heuristic: datetime within ±20 min and same liters.
     for i, r1 in enumerate(records):
-        for r2 in records[i + 1:]:
-            if r1.datetime == r2.datetime and r1.station_name == r2.station_name:
+        for j, r2 in enumerate(records[i + 1:], start=i + 1):
+            time_diff = abs(r1.datetime - r2.datetime)
+            if time_diff <= DUPLICATE_TIME_TOLERANCE and r1.liters == r2.liters:
                 result.add_warning(
-                    f"Potential duplicate: '{r1.event_id}' and '{r2.event_id}' "
-                    f"have same datetime and station",
+                    f"Potential duplicate: rows with {r1.liters}L at "
+                    f"{r1.datetime} and {r2.datetime} "
+                    f"(within {DUPLICATE_TIME_TOLERANCE})",
                 )
 
     return records, result
@@ -352,20 +340,12 @@ def validate_odometer_dataset(
     """
     result = ValidationResult()
     records: list[OdometerRecord] = []
-    seen_ids: set[str] = set()
 
     for i, row_data in enumerate(rows):
         row_number = i + 2
         record = validate_odometer_row(row_data, row_number, result)
         if record is not None:
-            if record.event_id in seen_ids:
-                result.add_error(
-                    f"Duplicate event_id: '{record.event_id}'",
-                    row=row_number, event_id=record.event_id, field="event_id",
-                )
-            else:
-                seen_ids.add(record.event_id)
-                records.append(record)
+            records.append(record)
 
     # Chronological and monotonicity checks.
     sorted_records = sorted(records, key=lambda r: r.datetime)
@@ -374,15 +354,23 @@ def validate_odometer_dataset(
         curr = sorted_records[i]
         if curr.odometer_km < prev.odometer_km:
             result.add_warning(
-                f"Odometer monotonicity violation: '{curr.event_id}' "
-                f"({curr.odometer_km} km at {curr.datetime}) is less than "
-                f"'{prev.event_id}' ({prev.odometer_km} km at {prev.datetime})",
-                event_id=curr.event_id, field="odometer_km",
+                f"Odometer monotonicity violation: "
+                f"{curr.odometer_km} km at {curr.datetime} is less than "
+                f"{prev.odometer_km} km at {prev.datetime}",
+                field="odometer_km",
             )
-        if curr.datetime == prev.datetime:
-            result.add_warning(
-                f"Duplicate datetime: '{prev.event_id}' and '{curr.event_id}' "
-                f"both at {curr.datetime}",
-            )
+
+    # Duplicate detection: datetime within ±20 min and same odometer_km.
+    for i, r1 in enumerate(sorted_records):
+        for r2 in sorted_records[i + 1:]:
+            time_diff = abs(r1.datetime - r2.datetime)
+            if time_diff > DUPLICATE_TIME_TOLERANCE:
+                break  # sorted by time, no more matches possible
+            if r1.odometer_km == r2.odometer_km:
+                result.add_warning(
+                    f"Potential duplicate: odometer readings of "
+                    f"{r1.odometer_km} km at {r1.datetime} and {r2.datetime} "
+                    f"(within {DUPLICATE_TIME_TOLERANCE})",
+                )
 
     return records, result

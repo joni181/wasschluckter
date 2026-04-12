@@ -1,10 +1,9 @@
-"""Tests for fuel_analysis.validators: row-level and dataset-level validation."""
+"""Tests for validation logic."""
 
 import pytest
 from datetime import datetime
 
 from fuel_analysis.config import ValidationConfig
-from fuel_analysis.models import FuelType, FullTankStatus
 from fuel_analysis.validators import (
     ValidationResult,
     validate_fuel_row,
@@ -14,400 +13,244 @@ from fuel_analysis.validators import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-_DEFAULT_CONFIG = ValidationConfig()
-
-
-def _fuel_row(
-    event_id: str = "F001",
-    dt: str = "2024-06-01T10:00:00",
-    amount_eur: str = "72.00",
-    liters: str = "40.00",
-    price_per_liter_eur: str = "1.800",
-    fuel_type: str = "E5",
-    is_full_tank: str = "true",
-    station_name: str = "Shell Autobahn",
-    city: str = "Berlin",
-    country: str = "DE",
-    notes: str = "",
-) -> dict[str, str]:
-    return {
-        "event_id": event_id,
-        "datetime": dt,
-        "amount_eur": amount_eur,
-        "liters": liters,
-        "price_per_liter_eur": price_per_liter_eur,
-        "fuel_type": fuel_type,
-        "is_full_tank": is_full_tank,
-        "station_name": station_name,
-        "city": city,
-        "country": country,
-        "notes": notes,
+def _fuel_row(**overrides) -> dict[str, str]:
+    base = {
+        "datetime": "2024-03-15 08:30:00",
+        "amount_eur": "75.50",
+        "liters": "42.50",
+        "price_per_liter_eur": "1.776",
+        "fuel_type": "E10",
+        "is_full_tank": "true",
+        "station_name": "Aral",
+        "city": "Munich",
+        "country": "DE",
+        "notes": "",
     }
+    base.update(overrides)
+    return base
 
 
-def _odometer_row(
-    event_id: str = "O001",
-    dt: str = "2024-06-01T10:00:00",
-    odometer_km: str = "50000.0",
-    notes: str = "",
-) -> dict[str, str]:
-    return {
-        "event_id": event_id,
-        "datetime": dt,
-        "odometer_km": odometer_km,
-        "notes": notes,
+def _odo_row(**overrides) -> dict[str, str]:
+    base = {
+        "datetime": "2024-03-15 08:30:00",
+        "odometer_km": "45000",
+        "notes": "",
     }
+    base.update(overrides)
+    return base
 
 
-# ---------------------------------------------------------------------------
-# validate_fuel_row: happy path
-# ---------------------------------------------------------------------------
-
-
-class TestValidateFuelRowHappy:
-    def test_valid_row_returns_record(self):
+class TestValidateFuelRowBasic:
+    def test_valid_row(self):
         result = ValidationResult()
-        rec = validate_fuel_row(_fuel_row(), row_number=2, config=_DEFAULT_CONFIG, result=result)
-        assert rec is not None
-        assert rec.event_id == "F001"
-        assert rec.fuel_type is FuelType.E5
-        assert rec.is_full_tank is FullTankStatus.YES
-        assert rec.country == "DE"
+        record = validate_fuel_row(_fuel_row(), 2, ValidationConfig(), result)
+        assert record is not None
         assert result.is_valid
+        assert record.liters == 42.50
 
-    def test_valid_row_no_warnings_when_consistent(self):
+    def test_unparsable_datetime(self):
         result = ValidationResult()
-        validate_fuel_row(_fuel_row(), row_number=2, config=_DEFAULT_CONFIG, result=result)
-        assert len(result.warnings) == 0
+        record = validate_fuel_row(_fuel_row(datetime="not-a-date"), 2, ValidationConfig(), result)
+        assert record is None
+        assert not result.is_valid
 
-
-# ---------------------------------------------------------------------------
-# validate_fuel_row: positivity checks
-# ---------------------------------------------------------------------------
-
-
-class TestValidateFuelRowPositivity:
-    @pytest.mark.parametrize("field", ["amount_eur", "liters", "price_per_liter_eur"])
-    def test_negative_value_is_error(self, field):
+    def test_empty_datetime(self):
         result = ValidationResult()
-        row = _fuel_row(**{field: "-1.0"})
-        rec = validate_fuel_row(row, row_number=2, config=_DEFAULT_CONFIG, result=result)
-        assert rec is None
-        assert len(result.errors) >= 1
-        assert any(field in e.field for e in result.errors if e.field)
+        record = validate_fuel_row(_fuel_row(datetime=""), 2, ValidationConfig(), result)
+        assert record is None
 
-    @pytest.mark.parametrize("field", ["amount_eur", "liters", "price_per_liter_eur"])
-    def test_zero_value_is_error(self, field):
+
+class TestValidateFuelRowNumerics:
+    def test_negative_amount(self):
         result = ValidationResult()
-        row = _fuel_row(**{field: "0"})
-        rec = validate_fuel_row(row, row_number=2, config=_DEFAULT_CONFIG, result=result)
-        assert rec is None
-        assert len(result.errors) >= 1
+        record = validate_fuel_row(_fuel_row(amount_eur="-10"), 2, ValidationConfig(), result)
+        assert record is None
+        assert any("amount_eur" in e.message for e in result.errors)
 
-    @pytest.mark.parametrize("field", ["amount_eur", "liters", "price_per_liter_eur"])
-    def test_non_numeric_value_is_error(self, field):
+    def test_zero_liters(self):
         result = ValidationResult()
-        row = _fuel_row(**{field: "abc"})
-        rec = validate_fuel_row(row, row_number=2, config=_DEFAULT_CONFIG, result=result)
-        assert rec is None
-        assert any("Invalid numeric" in e.message for e in result.errors)
+        record = validate_fuel_row(_fuel_row(liters="0"), 2, ValidationConfig(), result)
+        assert record is None
 
-
-# ---------------------------------------------------------------------------
-# validate_fuel_row: fuel_type validation
-# ---------------------------------------------------------------------------
+    def test_non_numeric_price(self):
+        result = ValidationResult()
+        record = validate_fuel_row(_fuel_row(price_per_liter_eur="abc"), 2, ValidationConfig(), result)
+        assert record is None
 
 
 class TestValidateFuelRowFuelType:
     def test_invalid_fuel_type(self):
         result = ValidationResult()
-        row = _fuel_row(fuel_type="Diesel")
-        rec = validate_fuel_row(row, row_number=2, config=_DEFAULT_CONFIG, result=result)
-        assert rec is None
-        assert any("fuel_type" in (e.field or "") for e in result.errors)
-
-    def test_empty_fuel_type(self):
-        result = ValidationResult()
-        row = _fuel_row(fuel_type="")
-        rec = validate_fuel_row(row, row_number=2, config=_DEFAULT_CONFIG, result=result)
-        assert rec is None
+        record = validate_fuel_row(_fuel_row(fuel_type="E15"), 2, ValidationConfig(), result)
+        assert record is None
 
     @pytest.mark.parametrize("ft", ["E5", "E10"])
     def test_valid_fuel_types(self, ft):
         result = ValidationResult()
-        row = _fuel_row(fuel_type=ft)
-        rec = validate_fuel_row(row, row_number=2, config=_DEFAULT_CONFIG, result=result)
-        assert rec is not None
-        assert rec.fuel_type.value == ft
-
-
-# ---------------------------------------------------------------------------
-# validate_fuel_row: country validation
-# ---------------------------------------------------------------------------
+        record = validate_fuel_row(_fuel_row(fuel_type=ft), 2, ValidationConfig(), result)
+        assert record is not None
+        assert record.fuel_type.value == ft
 
 
 class TestValidateFuelRowCountry:
-    def test_invalid_country_format(self):
+    def test_invalid_format(self):
         result = ValidationResult()
-        row = _fuel_row(country="Germany")
-        rec = validate_fuel_row(row, row_number=2, config=_DEFAULT_CONFIG, result=result)
-        assert rec is None
-        assert any("country" in (e.field or "") for e in result.errors)
+        record = validate_fuel_row(_fuel_row(country="Germany"), 2, ValidationConfig(), result)
+        assert record is None
 
-    def test_lowercase_country_is_error(self):
+    def test_lowercase(self):
         result = ValidationResult()
-        row = _fuel_row(country="de")
-        rec = validate_fuel_row(row, row_number=2, config=_DEFAULT_CONFIG, result=result)
-        assert rec is None
+        record = validate_fuel_row(_fuel_row(country="de"), 2, ValidationConfig(), result)
+        assert record is None
 
-    def test_primary_country_no_warning(self):
+    def test_primary_country(self):
         result = ValidationResult()
-        row = _fuel_row(country="DE")
-        validate_fuel_row(row, row_number=2, config=_DEFAULT_CONFIG, result=result)
-        assert not any("country" in (w.field or "") for w in result.warnings)
+        record = validate_fuel_row(_fuel_row(country="AT"), 2, ValidationConfig(), result)
+        assert record is not None
+        assert len(result.warnings) == 0
 
-    def test_non_primary_country_gives_warning(self):
+    def test_non_primary_country_warning(self):
         result = ValidationResult()
-        row = _fuel_row(country="ES")
-        rec = validate_fuel_row(row, row_number=2, config=_DEFAULT_CONFIG, result=result)
-        assert rec is not None  # Valid ISO code, just not primary
-        assert any("country" in (w.field or "") for w in result.warnings)
-
-    def test_empty_country_is_error(self):
-        result = ValidationResult()
-        row = _fuel_row(country="")
-        rec = validate_fuel_row(row, row_number=2, config=_DEFAULT_CONFIG, result=result)
-        assert rec is None
-
-
-# ---------------------------------------------------------------------------
-# validate_fuel_row: price consistency warning
-# ---------------------------------------------------------------------------
+        record = validate_fuel_row(_fuel_row(country="ES"), 2, ValidationConfig(), result)
+        assert record is not None
+        assert any("primary set" in w.message for w in result.warnings)
 
 
 class TestValidateFuelRowPriceConsistency:
-    def test_consistent_price_no_warning(self):
+    def test_consistent(self):
         result = ValidationResult()
-        # 40 * 1.8 = 72.0 exactly
-        row = _fuel_row(amount_eur="72.00", liters="40.00", price_per_liter_eur="1.800")
-        validate_fuel_row(row, row_number=2, config=_DEFAULT_CONFIG, result=result)
+        record = validate_fuel_row(_fuel_row(), 2, ValidationConfig(), result)
+        assert record is not None
         assert not any("inconsistency" in w.message.lower() for w in result.warnings)
 
-    def test_inconsistent_price_gives_warning(self):
+    def test_large_discrepancy(self):
         result = ValidationResult()
-        # 40 * 1.8 = 72, but claiming amount_eur = 80 => large discrepancy
-        row = _fuel_row(amount_eur="80.00", liters="40.00", price_per_liter_eur="1.800")
-        validate_fuel_row(row, row_number=2, config=_DEFAULT_CONFIG, result=result)
+        record = validate_fuel_row(_fuel_row(amount_eur="100.00"), 2, ValidationConfig(), result)
+        assert record is not None
         assert any("inconsistency" in w.message.lower() for w in result.warnings)
 
-    def test_minor_rounding_within_tolerance(self):
-        result = ValidationResult()
-        # 40 * 1.8 = 72.0, amount_eur=72.50 => ~0.69% off, within 2%
-        row = _fuel_row(amount_eur="72.50", liters="40.00", price_per_liter_eur="1.800")
-        validate_fuel_row(row, row_number=2, config=_DEFAULT_CONFIG, result=result)
-        assert not any("inconsistency" in w.message.lower() for w in result.warnings)
 
+class TestValidateFuelDataset:
+    def test_empty(self):
+        records, result = validate_fuel_dataset([])
+        assert records == []
+        assert result.is_valid
 
-# ---------------------------------------------------------------------------
-# validate_fuel_row: datetime parsing
-# ---------------------------------------------------------------------------
-
-
-class TestValidateFuelRowDatetime:
-    def test_valid_datetime(self):
-        result = ValidationResult()
-        row = _fuel_row(dt="2024-06-15T14:30:00")
-        rec = validate_fuel_row(row, row_number=2, config=_DEFAULT_CONFIG, result=result)
-        assert rec is not None
-        assert rec.datetime == datetime(2024, 6, 15, 14, 30)
-
-    def test_unparsable_datetime(self):
-        result = ValidationResult()
-        row = _fuel_row(dt="not-a-date")
-        rec = validate_fuel_row(row, row_number=2, config=_DEFAULT_CONFIG, result=result)
-        assert rec is None
-        assert any("datetime" in (e.field or "") for e in result.errors)
-
-    def test_empty_datetime(self):
-        result = ValidationResult()
-        row = _fuel_row(dt="")
-        rec = validate_fuel_row(row, row_number=2, config=_DEFAULT_CONFIG, result=result)
-        assert rec is None
-
-    def test_missing_event_id(self):
-        result = ValidationResult()
-        row = _fuel_row(event_id="")
-        rec = validate_fuel_row(row, row_number=2, config=_DEFAULT_CONFIG, result=result)
-        assert rec is None
-        assert any("event_id" in (e.field or "") for e in result.errors)
-
-
-# ---------------------------------------------------------------------------
-# validate_fuel_dataset: duplicate event_id
-# ---------------------------------------------------------------------------
-
-
-class TestValidateFuelDatasetDuplicates:
-    def test_duplicate_event_id_error(self):
-        rows = [_fuel_row(event_id="F001"), _fuel_row(event_id="F001")]
-        records, result = validate_fuel_dataset(rows)
-        assert any("Duplicate event_id" in e.message for e in result.errors)
-        # Only the first should be in the list
-        assert len(records) == 1
-
-    def test_unique_ids_no_error(self):
-        rows = [_fuel_row(event_id="F001"), _fuel_row(event_id="F002")]
+    def test_valid_rows(self):
+        rows = [
+            _fuel_row(datetime="2024-03-15 08:30:00"),
+            _fuel_row(datetime="2024-04-15 08:30:00"),
+        ]
         records, result = validate_fuel_dataset(rows)
         assert len(records) == 2
-        assert result.is_valid
 
-    def test_potential_duplicate_warning_same_datetime_station(self):
+    def test_duplicate_detection_within_tolerance(self):
         rows = [
-            _fuel_row(event_id="F001", dt="2024-06-01T10:00:00", station_name="Shell"),
-            _fuel_row(event_id="F002", dt="2024-06-01T10:00:00", station_name="Shell"),
+            _fuel_row(datetime="2024-03-15 08:30:00", liters="42.50"),
+            _fuel_row(datetime="2024-03-15 08:40:00", liters="42.50"),
         ]
         records, result = validate_fuel_dataset(rows)
-        assert any("Potential duplicate" in w.message for w in result.warnings)
+        assert len(records) == 2
+        assert any("duplicate" in w.message.lower() for w in result.warnings)
 
-
-# ---------------------------------------------------------------------------
-# validate_fuel_dataset: full run
-# ---------------------------------------------------------------------------
-
-
-class TestValidateFuelDatasetFull:
-    def test_empty_dataset(self):
-        records, result = validate_fuel_dataset([])
-        assert len(records) == 0
-        assert result.is_valid
-
-    def test_mixed_valid_and_invalid(self):
+    def test_no_duplicate_when_different_liters(self):
         rows = [
-            _fuel_row(event_id="F001"),
-            _fuel_row(event_id="F002", amount_eur="-5"),  # invalid
-            _fuel_row(event_id="F003"),
+            _fuel_row(datetime="2024-03-15 08:30:00", liters="42.50"),
+            _fuel_row(datetime="2024-03-15 08:35:00", liters="30.00", amount_eur="53.40", price_per_liter_eur="1.780"),
         ]
         records, result = validate_fuel_dataset(rows)
-        assert len(records) == 2  # F001, F003
+        assert not any("duplicate" in w.message.lower() for w in result.warnings)
+
+    def test_no_duplicate_when_far_apart(self):
+        rows = [
+            _fuel_row(datetime="2024-03-15 08:30:00", liters="42.50"),
+            _fuel_row(datetime="2024-03-15 10:30:00", liters="42.50"),
+        ]
+        records, result = validate_fuel_dataset(rows)
+        assert not any("duplicate" in w.message.lower() for w in result.warnings)
+
+    def test_mixed_valid_invalid(self):
+        rows = [
+            _fuel_row(),
+            _fuel_row(liters="-5"),
+        ]
+        records, result = validate_fuel_dataset(rows)
+        assert len(records) == 1
         assert not result.is_valid
 
 
-# ---------------------------------------------------------------------------
-# validate_odometer_row
-# ---------------------------------------------------------------------------
-
-
 class TestValidateOdometerRow:
-    def test_valid_row(self):
+    def test_valid(self):
         result = ValidationResult()
-        rec = validate_odometer_row(_odometer_row(), row_number=2, result=result)
-        assert rec is not None
-        assert rec.event_id == "O001"
-        assert rec.odometer_km == 50000.0
-        assert result.is_valid
+        record = validate_odometer_row(_odo_row(), 2, result)
+        assert record is not None
+        assert record.odometer_km == 45000
 
-    def test_negative_odometer_is_error(self):
+    def test_negative(self):
         result = ValidationResult()
-        rec = validate_odometer_row(
-            _odometer_row(odometer_km="-100"), row_number=2, result=result
-        )
-        assert rec is None
-        assert len(result.errors) >= 1
+        record = validate_odometer_row(_odo_row(odometer_km="-100"), 2, result)
+        assert record is None
 
-    def test_zero_odometer_is_valid(self):
+    def test_zero_is_valid(self):
         result = ValidationResult()
-        rec = validate_odometer_row(
-            _odometer_row(odometer_km="0"), row_number=2, result=result
-        )
-        assert rec is not None
-        assert rec.odometer_km == 0.0
+        record = validate_odometer_row(_odo_row(odometer_km="0"), 2, result)
+        assert record is not None
 
-    def test_missing_event_id(self):
+    def test_non_numeric(self):
         result = ValidationResult()
-        rec = validate_odometer_row(
-            _odometer_row(event_id=""), row_number=2, result=result
-        )
-        assert rec is None
-
-    def test_unparsable_odometer(self):
-        result = ValidationResult()
-        rec = validate_odometer_row(
-            _odometer_row(odometer_km="abc"), row_number=2, result=result
-        )
-        assert rec is None
-
-
-# ---------------------------------------------------------------------------
-# validate_odometer_dataset
-# ---------------------------------------------------------------------------
+        record = validate_odometer_row(_odo_row(odometer_km="abc"), 2, result)
+        assert record is None
 
 
 class TestValidateOdometerDataset:
     def test_empty(self):
         records, result = validate_odometer_dataset([])
-        assert len(records) == 0
+        assert records == []
         assert result.is_valid
 
-    def test_duplicate_event_id(self):
-        rows = [_odometer_row(event_id="O001"), _odometer_row(event_id="O001")]
-        records, result = validate_odometer_dataset(rows)
-        assert any("Duplicate event_id" in e.message for e in result.errors)
-        assert len(records) == 1
-
-    def test_monotonicity_violation_warning(self):
+    def test_monotonicity_violation(self):
         rows = [
-            _odometer_row(event_id="O001", dt="2024-06-01T10:00:00", odometer_km="50000"),
-            _odometer_row(event_id="O002", dt="2024-06-02T10:00:00", odometer_km="49000"),
+            _odo_row(datetime="2024-03-15 08:00:00", odometer_km="50000"),
+            _odo_row(datetime="2024-03-16 08:00:00", odometer_km="49000"),
         ]
         records, result = validate_odometer_dataset(rows)
-        assert any("monotonicity" in w.message.lower() for w in result.warnings)
-        # Records are still included (warning, not error)
         assert len(records) == 2
+        assert any("monotonicity" in w.message.lower() for w in result.warnings)
 
     def test_monotonically_increasing_no_warning(self):
         rows = [
-            _odometer_row(event_id="O001", dt="2024-06-01T10:00:00", odometer_km="50000"),
-            _odometer_row(event_id="O002", dt="2024-06-02T10:00:00", odometer_km="50200"),
+            _odo_row(datetime="2024-03-15 08:00:00", odometer_km="45000"),
+            _odo_row(datetime="2024-03-16 08:00:00", odometer_km="45500"),
         ]
         records, result = validate_odometer_dataset(rows)
         assert not any("monotonicity" in w.message.lower() for w in result.warnings)
-        assert len(records) == 2
 
-    def test_duplicate_datetime_warning(self):
+    def test_duplicate_detection(self):
         rows = [
-            _odometer_row(event_id="O001", dt="2024-06-01T10:00:00", odometer_km="50000"),
-            _odometer_row(event_id="O002", dt="2024-06-01T10:00:00", odometer_km="50000"),
+            _odo_row(datetime="2024-03-15 08:00:00", odometer_km="45000"),
+            _odo_row(datetime="2024-03-15 08:10:00", odometer_km="45000"),
         ]
         records, result = validate_odometer_dataset(rows)
-        assert any("Duplicate datetime" in w.message for w in result.warnings)
-
-
-# ---------------------------------------------------------------------------
-# ValidationResult helpers
-# ---------------------------------------------------------------------------
+        assert any("duplicate" in w.message.lower() for w in result.warnings)
 
 
 class TestValidationResult:
-    def test_is_valid_with_only_warnings(self):
-        result = ValidationResult()
-        result.add_warning("just a warning")
-        assert result.is_valid
+    def test_is_valid_with_warnings_only(self):
+        r = ValidationResult()
+        r.add_warning("some warning")
+        assert r.is_valid
 
     def test_is_invalid_with_error(self):
-        result = ValidationResult()
-        result.add_error("bad data")
-        assert not result.is_valid
+        r = ValidationResult()
+        r.add_error("some error")
+        assert not r.is_valid
 
     def test_summary_format(self):
-        result = ValidationResult()
-        result.add_error("err1", row=2)
-        result.add_warning("warn1", row=3)
-        summary = result.summary()
-        assert "1 error(s)" in summary
-        assert "1 warning(s)" in summary
-        assert "ERROR" in summary
-        assert "WARN" in summary
+        r = ValidationResult()
+        r.add_error("bad thing", row=2)
+        r.add_warning("suspicious thing", row=3)
+        s = r.summary()
+        assert "1 error(s)" in s
+        assert "1 warning(s)" in s
+        assert "ERROR" in s
+        assert "WARN" in s

@@ -4,39 +4,38 @@ A Python toolkit for recording, validating, and analyzing vehicle fuel purchases
 
 ## Setup
 
-1. Clone the repository and change into the project directory.
+```bash
+# Clone the repository and enter it
+cd wasschluckter
 
-2. (Recommended) Create and activate a virtual environment:
-   ```
-   python -m venv .venv
-   source .venv/bin/activate
-   ```
+# Create and activate a virtual environment (recommended)
+python -m venv .venv
+source .venv/bin/activate
 
-3. Install the package in editable mode:
-   ```
-   pip install -e .
-   ```
+# Install the package in editable mode (from the project root)
+pip install -e .
 
-4. Install all dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
+# Install additional tools (Jupyter for notebooks)
+pip install -r requirements.txt
+```
+
+The `pip install -e .` command must be run from the project root where `pyproject.toml` lives.
 
 ## Dependencies
 
-| Package    | Version constraint | Purpose                                 |
-|------------|--------------------|-----------------------------------------|
-| pandas     | >=2.0, <3.0        | DataFrames, time-series resampling      |
-| matplotlib | >=3.7, <4.0        | Charts and visualizations               |
-| notebook   | >=7.0, <8.0        | Jupyter notebook runtime                |
-| pydantic   | >=2.0, <3.0        | Data validation support                 |
-
-Python 3.10 or later is required.
+| Package    | Version       | Purpose                        |
+|------------|---------------|--------------------------------|
+| pandas     | >= 2.0, < 3.0 | Data loading and analysis      |
+| matplotlib | >= 3.7, < 4.0 | Charts and plotting            |
+| notebook   | >= 7.0, < 8.0 | Jupyter notebook support       |
 
 ## Folder Structure
 
 ```
 wasschluckter/
+├── README.md
+├── pyproject.toml
+├── requirements.txt
 ├── data/
 │   ├── fuel_log.csv
 │   └── odometer_log.csv
@@ -46,161 +45,181 @@ wasschluckter/
 │   └── fuel_analysis/
 │       ├── __init__.py
 │       ├── __main__.py
-│       ├── cli.py
 │       ├── config.py
-│       ├── interpolation.py
-│       ├── loaders.py
-│       ├── metrics.py
 │       ├── models.py
+│       ├── loaders.py
+│       ├── validators.py
+│       ├── interpolation.py
+│       ├── metrics.py
 │       ├── plotting.py
-│       └── validators.py
+│       └── cli.py
 ├── tests/
-│   └── __init__.py
-├── .gitignore
-├── requirements.txt
-├── setup.py
-└── README.md
+│   ├── test_models.py
+│   ├── test_validation.py
+│   ├── test_interpolation.py
+│   └── test_metrics.py
+└── .gitignore
 ```
 
-## Data Files
+## CSV Files
 
-Both CSV files use the following dialect:
+### CSV Dialect
 
-- **Delimiter:** comma (`,`)
-- **Encoding:** UTF-8
-- **Decimal separator:** period (`.`)
-- **Datetime convention:** all datetimes are timezone-naive and represent the local time at the location of the event.
+Both CSV files use the same dialect:
+
+- **Delimiter**: comma (`,`)
+- **Encoding**: UTF-8
+- **Decimal separator**: period (`.`)
+- **Quote character**: double quote (`"`)
+- **Datetime convention**: timezone-naive local time (ISO format, e.g. `2024-03-15 08:30:00`). All times represent the local time at the location of the event.
+
+This dialect was chosen for maximum portability across Python, Excel, LibreOffice, and Google Sheets.
 
 ### `data/fuel_log.csv`
 
-Each row represents a single fuel purchase event.
+Each row records a single fuel purchase event.
 
-| Column               | Type    | Description                                                                 |
-|----------------------|---------|-----------------------------------------------------------------------------|
-| `event_id`           | string  | Unique identifier for the fuel event (e.g. `F001`).                        |
-| `datetime`           | string  | Timestamp of the purchase in `YYYY-MM-DD HH:MM:SS` format, timezone-naive. |
-| `amount_eur`         | float   | Total cost of the purchase in EUR.                                         |
-| `liters`             | float   | Volume of fuel purchased in liters.                                        |
-| `price_per_liter_eur`| float   | Unit price in EUR per liter.                                               |
-| `fuel_type`          | string  | Fuel grade. Allowed values in v1: `E5`, `E10`.                             |
-| `is_full_tank`       | string  | Whether the tank was filled completely: `true`, `false`, or empty (unknown).|
-| `station_name`       | string  | Name of the fuel station.                                                  |
-| `city`               | string  | City where the station is located.                                         |
-| `country`            | string  | ISO 3166-1 alpha-2 country code (e.g. `DE`, `AT`, `FR`).                  |
-| `notes`              | string  | Optional free-text notes.                                                  |
+| Column               | Type        | Required | Description                                                |
+|----------------------|-------------|----------|------------------------------------------------------------|
+| datetime             | datetime    | yes      | When the purchase happened (local time, ISO format)        |
+| amount_eur           | float > 0   | yes      | Total amount paid in EUR                                   |
+| liters               | float > 0   | yes      | Liters of fuel purchased                                   |
+| price_per_liter_eur  | float > 0   | yes      | Price per liter in EUR                                     |
+| fuel_type            | enum        | yes      | `E5` or `E10`                                              |
+| is_full_tank         | bool/empty  | optional | `true`, `false`, or empty (= unknown)                      |
+| station_name         | text        | yes      | Name of the fuel station                                   |
+| city                 | text        | yes      | City where the station is located                          |
+| country              | 2-letter    | yes      | ISO 3166-1 alpha-2 code (primary: DE, IT, AT, FR, HR, CH) |
+| notes                | text        | optional | Free text notes                                            |
 
 ### `data/odometer_log.csv`
 
-Each row represents a single odometer reading.
+Each row records an odometer reading at a point in time.
 
-| Column        | Type    | Description                                                                 |
-|---------------|---------|-----------------------------------------------------------------------------|
-| `event_id`    | string  | Unique identifier for the reading (e.g. `O001`).                           |
-| `datetime`    | string  | Timestamp of the reading in `YYYY-MM-DD HH:MM:SS` format, timezone-naive.  |
-| `odometer_km` | float   | Cumulative distance shown on the odometer in kilometers.                   |
-| `notes`       | string  | Optional free-text notes.                                                  |
+| Column      | Type      | Required | Description                                         |
+|-------------|-----------|----------|-----------------------------------------------------|
+| datetime    | datetime  | yes      | When the reading was taken (local time, ISO format)  |
+| odometer_km | float >= 0 | yes     | Odometer reading in kilometers                       |
+| notes       | text      | optional | Free text notes                                     |
+
+### Duplicate Detection
+
+Instead of requiring manually maintained unique IDs, duplicates are detected automatically by comparing:
+
+- **Fuel events**: datetime within +/- 20 minutes AND identical liters value
+- **Odometer events**: datetime within +/- 20 minutes AND identical odometer_km value
+
+Potential duplicates are reported as warnings, not errors.
 
 ## Usage
 
-### Validate Data
+### Validate CSV files
 
-Run validation on both CSV files. Hard errors and soft warnings are printed to the console.
-
-```
+```bash
 python -m fuel_analysis validate
 ```
 
-### Print Summary
+Checks both CSV files for structural errors and data quality issues. Reports hard errors and soft warnings.
 
-Compute and display fuel, odometer, and consumption metrics.
+### Print metrics summary
 
-```
+```bash
 python -m fuel_analysis summary
 ```
 
-### Run the Notebook
+Prints total fuel volume, spending, average price, distance driven, and estimated consumption metrics.
 
-Launch Jupyter and open the exploratory analysis notebook.
+### Run the analysis notebook
 
-```
+```bash
 jupyter notebook notebooks/initial_analysis.ipynb
 ```
 
+The notebook loads data through the package (no inline re-parsing), validates inputs, computes metrics, and generates charts.
+
 ## Interpolation Approach
 
-Version 1 uses **linear interpolation** exclusively to estimate odometer readings at fuel purchase timestamps.
+### Why linear interpolation (v1)
 
-**Why linear interpolation:**
+Combined metrics like L/100km require knowing the odometer reading at each fuel event time. Since odometer readings and fuel events are logged independently, exact alignment is rare. v1 uses **linear interpolation** to estimate odometer values between known readings.
 
-- **Conservative.** It assumes a constant rate of distance accumulation between two known odometer readings, which is the least presumptive model possible.
-- **Simple.** The implementation is a single formula with no tuneable parameters.
-- **Interpretable.** Any analyst can verify an interpolated value by hand.
-- **Stable.** Results do not change unexpectedly when new data points are added elsewhere in the timeline.
-- **Auditable.** Every estimated value carries provenance metadata (method name, source interval) so downstream consumers can trace how it was derived.
+Linear interpolation was chosen because:
 
-**Why higher-order methods (Newton, Aitken-Neville, splines) are not used:**
+- It is the most **conservative** approximation for sparse, irregularly-spaced observations
+- It is **simple**, **interpretable**, **stable**, and **easy to audit**
+- It assumes constant driving speed between two readings, which is a reasonable first-order approximation
 
-- **Unnecessary for sparse data.** Odometer readings are recorded days or weeks apart; polynomial curves fitted to a handful of points do not yield meaningful additional accuracy.
-- **Oscillatory behavior.** Higher-degree polynomials are prone to the Runge phenomenon, producing nonphysical swings between data points.
-- **Reduced interpretability.** A cubic or higher-order estimate is harder for a non-technical user to verify or explain.
-- **Implies more structure than the data justifies.** Using a complex model on sparse observations creates a false sense of precision.
+### Why not higher-order methods?
 
-The interpolation layer is designed for extensibility: the `InterpolationStrategy` abstract base class allows new methods to be added in future versions without changing downstream code.
+Higher-order polynomial interpolation methods (Newton, Aitken-Neville, cubic splines) are **intentionally not used** in v1:
 
-## Exact vs. Estimated Metrics
+- **Unnecessary for sparse real-world data**: odometer readings are recorded at irregular, widely-spaced intervals. Higher-order polynomials impose structure the data does not support.
+- **Oscillatory artifacts (Runge phenomenon)**: polynomial interpolation through sparse points can produce nonphysical oscillations, leading to negative distances or implausible speed estimates.
+- **Reduced interpretability**: linear interpolation is trivial to audit. Higher-order methods make it harder to trace how an estimated value was derived.
+- **No justified model complexity**: a more complex model would imply knowledge about driving patterns that we do not have.
 
-The project distinguishes between two quality levels for every computed metric.
+The architecture supports future extension via the `InterpolationStrategy` abstract base class.
 
-- **Exact metrics** are derived from a single data source and require no interpolation. Examples: total liters purchased, total EUR spent, average price per liter (fuel log only), total distance driven (odometer log only).
-- **Estimated metrics** combine data from both CSVs and require interpolating odometer values at fuel event timestamps. Examples: liters per 100 km, cost per 100 km, cost per km.
+## Exact vs Estimated Metrics
 
-Every estimated value carries an `EstimationQuality` label (`exact`, `estimated`, or `insufficient`) and the name of the method used. Charts color-code data points by quality -- green for exact, orange for estimated -- so the viewer can immediately see which values are directly measured and which are derived.
+The project clearly distinguishes between:
+
+- **Exact metrics**: computed directly from a single data source without interpolation.
+  - Fuel-only: total volume, total spending, average price, price by country/city
+  - Odometer-only: total distance, monthly km driven, cumulative distance
+- **Estimated metrics**: require combining fuel and odometer data via interpolation.
+  - L/100km, cost/100km, cost/km
+
+Every estimated value carries metadata indicating:
+- That interpolation was used
+- Which method was used (`linear`)
+- The source interval used for interpolation
+- The quality classification: `exact`, `estimated`, or `insufficient`
+
+In the consumption chart, data points are color-coded:
+- **Green**: exact (odometer readings existed at both fuel event timestamps)
+- **Orange**: estimated (at least one odometer value was interpolated)
 
 ## Validation Policy
 
-Validation runs in two tiers.
+### Hard errors (block loading)
 
-### Hard errors
+- Unparsable datetime
+- Negative or zero values for amount_eur, liters, price_per_liter_eur
+- Negative odometer_km
+- Invalid fuel_type (not E5 or E10)
+- Invalid country code format (not 2 uppercase letters)
+- Missing required fields (station_name, country)
+- Missing required columns in the CSV header
 
-Hard errors indicate structurally invalid data. A record with a hard error is excluded from all analysis. Examples:
+### Soft warnings (reported, do not block)
 
-- Missing or empty `event_id`.
-- Unparsable datetime string.
-- Negative or zero numeric values for `amount_eur`, `liters`, or `price_per_liter_eur`.
-- Unrecognized `fuel_type` (not in `{E5, E10}`).
-- Invalid country code format (not a two-letter uppercase ISO code).
-- Duplicate `event_id` within a dataset.
-- Missing required columns in the CSV header.
-
-### Soft warnings
-
-Soft warnings flag suspicious data that is still loadable. The record is included in analysis but the issue is reported. Examples:
-
-- Price consistency mismatch: `amount_eur` differs from `liters * price_per_liter_eur` by more than 2%.
-- Suspiciously low (below 0.80 EUR) or high (above 3.00 EUR) price per liter.
-- Odometer monotonicity violation (a later reading is lower than an earlier one).
-- Potential duplicate entries (same datetime and station for two different event IDs).
-- Missing optional fields such as `city`.
+- Price consistency: `amount_eur` vs `liters * price_per_liter_eur` mismatch beyond 2% tolerance
+- Suspiciously high (> 3.00 EUR) or low (< 0.80 EUR) price per liter
+- Odometer monotonicity violations (reading decreases over time)
+- Potential duplicate entries (based on datetime proximity + value matching)
+- Country code not in the primary set (DE, IT, AT, FR, HR, CH)
+- Missing city value
 
 ## Limitations of v1
 
-The current version is intentionally minimal. The following capabilities are out of scope:
-
-- No OCR or image-based receipt ingestion.
-- No image import of any kind.
-- No database backend; all data lives in flat CSV files.
-- No web UI or REST API.
-- No PDF or HTML report export.
-- No advanced interpolation methods (splines, polynomial regression, Bayesian estimation).
-- No machine learning or predictive modeling.
+- No OCR for receipts or odometer photos
+- No image import pipeline
+- No database storage (CSV only)
+- No web UI
+- No PDF/report export
+- No advanced interpolation beyond linear
+- No machine learning or forecasting
+- No automated scheduling
 
 ## Future Extensibility
 
-The architecture is designed to accommodate the following extensions in later versions:
+The project is designed for straightforward extension:
 
-- **New fuel types.** Additional values can be added to the `FuelType` enum and the allowed-types configuration set.
-- **New countries.** The country validation accepts any valid ISO 3166-1 alpha-2 code; the primary-set warning list can be expanded in configuration.
-- **New metrics.** Metric functions follow a consistent pattern (accept a DataFrame, return a scalar or DataFrame) and can be added independently.
-- **New charts.** The plotting module is stateless; new plot functions can be added without modifying existing ones.
-- **Image ingestion.** A future OCR pipeline could feed parsed receipt data directly into the existing validation and loading layers.
-- **Richer reporting.** PDF or HTML export could consume the same DataFrames and estimation objects that the notebook uses today.
+- **New fuel types**: add values to the `FuelType` enum and `ALLOWED_FUEL_TYPES`
+- **New countries**: add values to `Country` enum and `REQUIRED_COUNTRY_CODES`
+- **New metrics**: add functions to `metrics.py`
+- **New charts**: add functions to `plotting.py`
+- **New interpolation strategies**: implement the `InterpolationStrategy` ABC
+- **Image ingestion**: add new loader modules
+- **Richer reporting**: add export modules (PDF, HTML)

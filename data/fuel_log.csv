@@ -1,9 +1,9 @@
-event_id,datetime,amount_eur,liters,price_per_liter_eur,fuel_type,is_full_tank,station_name,city,country,notes
-F001,2024-03-15 08:30:00,75.50,42.50,1.776,E10,true,Aral Tankstelle,Munich,DE,
-F002,2024-03-28 17:45:00,82.30,45.20,1.821,E5,true,Shell Station,Innsbruck,AT,Highway stop
-F003,2024-04-10 09:15:00,68.90,40.10,1.718,E10,false,Total Energies,Lyon,FR,Partial fill
-F004,2024-04-22 14:00:00,71.20,41.80,1.703,E10,true,ENI Station,Bolzano,IT,
-F005,2024-05-05 11:30:00,79.60,44.00,1.809,E5,,OMV Tankstelle,Salzburg,AT,Full tank status unknown
-F006,2024-05-18 16:20:00,65.40,38.50,1.699,E10,true,Agip,Split,HR,
-F007,2024-06-01 10:00:00,88.10,47.30,1.863,E5,true,Migrol,Zurich,CH,Premium fuel
-F008,2024-06-15 08:45:00,72.80,42.10,1.730,E10,true,Aral Tankstelle,Munich,DE,
+datetime,amount_eur,liters,price_per_liter_eur,fuel_type,is_full_tank,station_name,city,country,notes
+2024-03-15 08:30:00,75.50,42.50,1.776,E10,true,Aral Tankstelle,Munich,DE,
+2024-03-28 17:45:00,82.30,45.20,1.821,E5,true,Shell Station,Innsbruck,AT,Highway stop
+2024-04-10 09:15:00,68.90,40.10,1.718,E10,false,Total Energies,Lyon,FR,Partial fill
+2024-04-22 14:00:00,71.20,41.80,1.703,E10,true,ENI Station,Bolzano,IT,
+2024-05-05 11:30:00,79.60,44.00,1.809,E5,,OMV Tankstelle,Salzburg,AT,Full tank status unknown
+2024-05-18 16:20:00,65.40,38.50,1.699,E10,true,Agip,Split,HR,
+2024-06-01 10:00:00,88.10,47.30,1.863,E5,true,Migrol,Zurich,CH,Premium fuel
+2024-06-15 08:45:00,72.80,42.10,1.730,E10,true,Aral Tankstelle,Munich,DE,

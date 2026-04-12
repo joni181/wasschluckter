@@ -3,6 +3,10 @@
 Datetime convention (v1): all datetimes are timezone-naive and represent
 the local time at the location of the event. This is documented here and
 in the README. The entire codebase uses this convention consistently.
+
+No event_id column: rows are identified by their content (datetime + key
+fields). Duplicate detection uses datetime proximity + value matching
+rather than requiring manually maintained unique identifiers.
 """
 
 from __future__ import annotations
@@ -71,7 +75,6 @@ class FullTankStatus(Enum):
 class FuelRecord:
     """A single validated fuel purchase event."""
 
-    event_id: str
     datetime: datetime
     amount_eur: float
     liters: float
@@ -92,7 +95,6 @@ class FuelRecord:
 class OdometerRecord:
     """A single validated odometer reading event."""
 
-    event_id: str
     datetime: datetime
     odometer_km: float
     notes: str

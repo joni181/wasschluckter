@@ -29,7 +29,6 @@ def fuel_records_to_dataframe(records: list[FuelRecord]) -> pd.DataFrame:
     """Convert fuel records to a pandas DataFrame."""
     data = [
         {
-            "event_id": r.event_id,
             "datetime": r.datetime,
             "amount_eur": r.amount_eur,
             "liters": r.liters,
@@ -54,7 +53,6 @@ def odometer_records_to_dataframe(records: list[OdometerRecord]) -> pd.DataFrame
     """Convert odometer records to a pandas DataFrame."""
     data = [
         {
-            "event_id": r.event_id,
             "datetime": r.datetime,
             "odometer_km": r.odometer_km,
             "notes": r.notes,
@@ -110,7 +108,7 @@ def fuel_type_summary(df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=["fuel_type", "count", "total_liters", "total_eur"])
     return (
         df.groupby("fuel_type")
-        .agg(count=("event_id", "count"), total_liters=("liters", "sum"), total_eur=("amount_eur", "sum"))
+        .agg(count=("liters", "count"), total_liters=("liters", "sum"), total_eur=("amount_eur", "sum"))
         .reset_index()
     )
 
@@ -207,8 +205,7 @@ def cumulative_distance(df: pd.DataFrame) -> pd.DataFrame:
 class ConsumptionEstimate:
     """A single fuel consumption estimate between two fuel events."""
 
-    fuel_event_id: str
-    datetime: datetime
+    fuel_datetime: datetime
     liters: float
     estimated_km: float
     liters_per_100km: EstimatedValue
@@ -267,7 +264,7 @@ def compute_consumption_estimates(
             quality = EstimationQuality.ESTIMATED
 
         method = strategy.name()
-        interval = f"{prev_fuel.event_id} -> {curr_fuel.event_id}"
+        interval = f"{prev_fuel.datetime} -> {curr_fuel.datetime}"
 
         liters_per_100 = curr_fuel.liters / estimated_km * 100
         cost_per_100 = curr_fuel.amount_eur / estimated_km * 100
@@ -275,8 +272,7 @@ def compute_consumption_estimates(
 
         estimates.append(
             ConsumptionEstimate(
-                fuel_event_id=curr_fuel.event_id,
-                datetime=curr_fuel.datetime,
+                fuel_datetime=curr_fuel.datetime,
                 liters=curr_fuel.liters,
                 estimated_km=estimated_km,
                 liters_per_100km=EstimatedValue(
@@ -304,8 +300,7 @@ def consumption_estimates_to_dataframe(
     """Convert consumption estimates to a DataFrame with quality labels."""
     data = [
         {
-            "fuel_event_id": e.fuel_event_id,
-            "datetime": e.datetime,
+            "datetime": e.fuel_datetime,
             "liters": e.liters,
             "estimated_km": e.estimated_km,
             "liters_per_100km": e.liters_per_100km.value,

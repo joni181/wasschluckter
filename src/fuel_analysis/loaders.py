@@ -20,12 +20,12 @@ from .validators import (
 
 
 FUEL_REQUIRED_COLUMNS = {
-    "event_id", "datetime", "amount_eur", "liters", "price_per_liter_eur",
+    "datetime", "amount_eur", "liters", "price_per_liter_eur",
     "fuel_type", "is_full_tank", "station_name", "city", "country", "notes",
 }
 
 ODOMETER_REQUIRED_COLUMNS = {
-    "event_id", "datetime", "odometer_km", "notes",
+    "datetime", "odometer_km", "notes",
 }
 
 

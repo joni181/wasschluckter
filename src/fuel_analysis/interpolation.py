@@ -80,7 +80,7 @@ class LinearInterpolation(InterpolationStrategy):
                     value=r.odometer_km,
                     quality=EstimationQuality.EXACT,
                     method=self.name(),
-                    source_interval=f"exact match at {r.event_id}",
+                    source_interval=f"exact match at {r.datetime}",
                 )
 
         # Find bracketing records.
@@ -109,7 +109,7 @@ class LinearInterpolation(InterpolationStrategy):
                 value=before.odometer_km,
                 quality=EstimationQuality.ESTIMATED,
                 method=self.name(),
-                source_interval=f"{before.event_id} -> {after.event_id}",
+                source_interval=f"{before.datetime} -> {after.datetime}",
             )
 
         fraction = (target_dt - before.datetime).total_seconds() / total_seconds
@@ -119,7 +119,7 @@ class LinearInterpolation(InterpolationStrategy):
             value=interpolated,
             quality=EstimationQuality.ESTIMATED,
             method=self.name(),
-            source_interval=f"{before.event_id} -> {after.event_id}",
+            source_interval=f"{before.datetime} -> {after.datetime}",
         )
 
     @staticmethod
@@ -130,8 +130,8 @@ class LinearInterpolation(InterpolationStrategy):
         if before is None and after is None:
             return "no bracketing records"
         if before is None:
-            return f"before first record ({after.event_id})"  # type: ignore[union-attr]
-        return f"after last record ({before.event_id})"
+            return f"before first record ({after.datetime})"  # type: ignore[union-attr]
+        return f"after last record ({before.datetime})"
 
 
 def get_interpolation_strategy(method: str = "linear") -> InterpolationStrategy:

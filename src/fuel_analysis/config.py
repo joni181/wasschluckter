@@ -41,7 +41,7 @@ class ValidationConfig:
 
     # Relative tolerance for amount_eur vs liters * price_per_liter_eur check.
     # 2% allows for minor rounding differences in real-world receipts.
-    price_consistency_tolerance: float = 0.02
+    price_consistency_tolerance: float = 0.002
 
     # Suspiciously low/high price per liter thresholds (EUR) for warnings.
     price_per_liter_min_warn: float = 0.80
