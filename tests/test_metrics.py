@@ -14,6 +14,8 @@ from fuel_analysis.metrics import (
     average_fuel_price,
     avg_price_by_country,
     compute_consumption_estimates,
+    consumption_estimates_to_dataframe,
+    estimate_distance_between_datetimes,
     fuel_records_to_dataframe,
     fuel_type_summary,
     total_fuel_spending,
@@ -227,3 +229,52 @@ class TestComputeConsumptionEstimates:
         ]
         estimates = compute_consumption_estimates(fuel, odo)
         assert len(estimates) == 2
+
+    def test_dataframe_contains_boundary_provenance(self):
+        fuel = [
+            _fuel(datetime(2024, 3, 15, 10, 0), liters=40, amount=72),
+            _fuel(datetime(2024, 4, 15, 10, 0), liters=45, amount=81),
+        ]
+        odo = [
+            _odo(datetime(2024, 3, 1, 10, 0), 45000),
+            _odo(datetime(2024, 5, 1, 10, 0), 46000),
+        ]
+        estimates = compute_consumption_estimates(fuel, odo)
+        df = consumption_estimates_to_dataframe(estimates)
+
+        assert "previous_fuel_datetime" in df.columns
+        assert "odometer_at_previous_quality" in df.columns
+        assert "odometer_at_current_source_interval" in df.columns
+        assert df["odometer_at_previous_quality"].iloc[0] == "estimated"
+
+
+class TestEstimateDistanceBetweenDatetimes:
+    def test_exact_when_both_boundaries_exist(self):
+        odo = [
+            _odo(datetime(2024, 3, 1, 10, 0), 45000),
+            _odo(datetime(2024, 4, 1, 10, 0), 46000),
+        ]
+        distance = estimate_distance_between_datetimes(
+            datetime(2024, 3, 1, 10, 0),
+            datetime(2024, 4, 1, 10, 0),
+            odo,
+        )
+
+        assert distance.quality is EstimationQuality.EXACT
+        assert distance.value == pytest.approx(1000.0)
+
+    def test_estimated_when_boundary_requires_interpolation(self):
+        odo = [
+            _odo(datetime(2024, 3, 1, 10, 0), 45000),
+            _odo(datetime(2024, 4, 1, 10, 0), 46000),
+            _odo(datetime(2024, 5, 1, 10, 0), 47000),
+        ]
+        distance = estimate_distance_between_datetimes(
+            datetime(2024, 3, 15, 10, 0),
+            datetime(2024, 4, 15, 10, 0),
+            odo,
+        )
+
+        assert distance.quality is EstimationQuality.ESTIMATED
+        assert distance.value > 0
+        assert "start:" in distance.source_interval

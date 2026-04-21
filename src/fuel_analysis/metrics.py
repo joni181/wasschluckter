@@ -205,13 +205,80 @@ def cumulative_distance(df: pd.DataFrame) -> pd.DataFrame:
 class ConsumptionEstimate:
     """A single fuel consumption estimate between two fuel events."""
 
+    previous_fuel_datetime: datetime
     fuel_datetime: datetime
     liters: float
     estimated_km: float
+    odometer_at_previous: EstimatedValue
+    odometer_at_current: EstimatedValue
     liters_per_100km: EstimatedValue
     cost_per_100km: EstimatedValue
     cost_per_km: EstimatedValue
     amount_eur: float
+
+
+def estimate_distance_between_datetimes(
+    start_dt: datetime,
+    end_dt: datetime,
+    odometer_records: list[OdometerRecord],
+    strategy: Optional[InterpolationStrategy] = None,
+) -> EstimatedValue:
+    """Estimate distance driven between two datetimes using odometer data.
+
+    The result is exact only when odometer readings exist at both boundaries.
+    Otherwise, the result is estimated via the interpolation strategy.
+    """
+    if strategy is None:
+        strategy = get_interpolation_strategy("linear")
+
+    if start_dt > end_dt:
+        raise ValueError("start_dt must be before or equal to end_dt")
+
+    start_value = strategy.estimate(start_dt, odometer_records)
+    end_value = strategy.estimate(end_dt, odometer_records)
+
+    if (
+        start_value.quality == EstimationQuality.INSUFFICIENT
+        or end_value.quality == EstimationQuality.INSUFFICIENT
+    ):
+        return EstimatedValue(
+            value=0.0,
+            quality=EstimationQuality.INSUFFICIENT,
+            method=strategy.name(),
+            source_interval=(
+                f"start: {start_value.source_interval or 'unknown'}; "
+                f"end: {end_value.source_interval or 'unknown'}"
+            ),
+        )
+
+    distance = end_value.value - start_value.value
+    if distance < 0:
+        return EstimatedValue(
+            value=0.0,
+            quality=EstimationQuality.INSUFFICIENT,
+            method=strategy.name(),
+            source_interval=(
+                f"negative distance between {start_dt.isoformat(sep=' ')} "
+                f"and {end_dt.isoformat(sep=' ')}"
+            ),
+        )
+
+    quality = EstimationQuality.EXACT
+    if (
+        start_value.quality == EstimationQuality.ESTIMATED
+        or end_value.quality == EstimationQuality.ESTIMATED
+    ):
+        quality = EstimationQuality.ESTIMATED
+
+    return EstimatedValue(
+        value=distance,
+        quality=quality,
+        method=strategy.name(),
+        source_interval=(
+            f"start: {start_value.source_interval or start_dt.isoformat(sep=' ')}; "
+            f"end: {end_value.source_interval or end_dt.isoformat(sep=' ')}"
+        ),
+    )
 
 
 def compute_consumption_estimates(
@@ -272,9 +339,12 @@ def compute_consumption_estimates(
 
         estimates.append(
             ConsumptionEstimate(
+                previous_fuel_datetime=prev_fuel.datetime,
                 fuel_datetime=curr_fuel.datetime,
                 liters=curr_fuel.liters,
                 estimated_km=estimated_km,
+                odometer_at_previous=odo_at_prev,
+                odometer_at_current=odo_at_curr,
                 liters_per_100km=EstimatedValue(
                     value=liters_per_100, quality=quality,
                     method=method, source_interval=interval,
@@ -300,9 +370,18 @@ def consumption_estimates_to_dataframe(
     """Convert consumption estimates to a DataFrame with quality labels."""
     data = [
         {
+            "previous_fuel_datetime": e.previous_fuel_datetime,
             "datetime": e.fuel_datetime,
             "liters": e.liters,
             "estimated_km": e.estimated_km,
+            "odometer_at_previous": e.odometer_at_previous.value,
+            "odometer_at_previous_quality": e.odometer_at_previous.quality.value,
+            "odometer_at_previous_method": e.odometer_at_previous.method,
+            "odometer_at_previous_source_interval": e.odometer_at_previous.source_interval,
+            "odometer_at_current": e.odometer_at_current.value,
+            "odometer_at_current_quality": e.odometer_at_current.quality.value,
+            "odometer_at_current_method": e.odometer_at_current.method,
+            "odometer_at_current_source_interval": e.odometer_at_current.source_interval,
             "liters_per_100km": e.liters_per_100km.value,
             "liters_per_100km_quality": e.liters_per_100km.quality.value,
             "liters_per_100km_method": e.liters_per_100km.method,
@@ -318,5 +397,6 @@ def consumption_estimates_to_dataframe(
     ]
     df = pd.DataFrame(data)
     if not df.empty:
+        df["previous_fuel_datetime"] = pd.to_datetime(df["previous_fuel_datetime"])
         df["datetime"] = pd.to_datetime(df["datetime"])
     return df

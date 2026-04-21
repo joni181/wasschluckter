@@ -31,6 +31,7 @@ class PathConfig:
     """File path configuration."""
 
     data_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "data")
+    reports_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "reports")
     fuel_log: Path = field(default_factory=lambda: PROJECT_ROOT / "data" / "fuel_log.csv")
     odometer_log: Path = field(default_factory=lambda: PROJECT_ROOT / "data" / "odometer_log.csv")
 

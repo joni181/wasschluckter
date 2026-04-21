@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import date, datetime
+from pathlib import Path
 
 from .loaders import load_fuel_data, load_odometer_data
 from .metrics import (
@@ -20,6 +22,7 @@ from .metrics import (
     total_fuel_spending,
     total_fuel_volume,
 )
+from .reporting import generate_html_report
 
 
 def cmd_validate() -> int:
@@ -85,6 +88,45 @@ def cmd_summary() -> int:
     return 0
 
 
+def _parse_report_boundary(value: str) -> date | datetime:
+    """Parse a report boundary from ISO date or datetime text."""
+    try:
+        if "T" in value or " " in value:
+            return datetime.fromisoformat(value)
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"Invalid date '{value}'. Use YYYY-MM-DD or an ISO datetime."
+        ) from exc
+
+
+def cmd_report(
+    start: date | datetime | None,
+    end: date | datetime | None,
+    output: Path | None,
+) -> int:
+    """Generate a static HTML report."""
+    fuel_records, fuel_result = load_fuel_data()
+    odo_records, odo_result = load_odometer_data()
+
+    try:
+        report_path = generate_html_report(
+            fuel_records,
+            odo_records,
+            fuel_result,
+            odo_result,
+            start=start,
+            end=end,
+            output_path=output,
+        )
+    except ValueError as exc:
+        print(f"Could not generate report: {exc}")
+        return 1
+
+    print(f"HTML report written to: {report_path}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -94,6 +136,22 @@ def main(argv: list[str] | None = None) -> int:
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
     subparsers.add_parser("validate", help="Validate raw CSV files")
     subparsers.add_parser("summary", help="Print data quality and metrics summary")
+    report_parser = subparsers.add_parser("report", help="Generate a static HTML report")
+    report_parser.add_argument(
+        "--start",
+        type=_parse_report_boundary,
+        help="Inclusive report start date (YYYY-MM-DD or ISO datetime)",
+    )
+    report_parser.add_argument(
+        "--end",
+        type=_parse_report_boundary,
+        help="Inclusive report end date (YYYY-MM-DD or ISO datetime)",
+    )
+    report_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Output HTML path. Defaults to reports/fuel-report-<start>-to-<end>.html",
+    )
 
     args = parser.parse_args(argv)
 
@@ -101,6 +159,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_validate()
     elif args.command == "summary":
         return cmd_summary()
+    elif args.command == "report":
+        return cmd_report(args.start, args.end, args.output)
     else:
         parser.print_help()
         return 0

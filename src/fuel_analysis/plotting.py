@@ -11,6 +11,8 @@ from typing import Optional
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import pandas as pd
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 
 from .config import PlottingConfig
 
@@ -47,6 +49,97 @@ def plot_fuel_price_over_time(
     fig, ax = _make_figure(config)
     ax.plot(fuel_df["datetime"], fuel_df["price_per_liter_eur"], marker="o", linewidth=1.5)
     _apply_defaults(ax, "Fuel Price Over Time", "Date", "Price per Liter (EUR)", config)
+    fig.tight_layout()
+    return fig
+
+
+def plot_report_overview(
+    fuel_df: pd.DataFrame,
+    distance_df: pd.DataFrame,
+    config: Optional[PlottingConfig] = None,
+) -> plt.Figure:
+    """Combined overview chart for fuel purchases and odometer deltas."""
+    if config is None:
+        config = PlottingConfig()
+    fig, ax_fuel = _make_figure(config)
+    ax_distance = ax_fuel.twinx()
+
+    if not fuel_df.empty:
+        ax_fuel.bar(
+            fuel_df["datetime"],
+            fuel_df["liters"],
+            width=pd.Timedelta(days=2),
+            color="#2f6c8f",
+            alpha=0.85,
+        )
+
+    if not distance_df.empty:
+        ax_distance.plot(
+            distance_df["datetime"],
+            distance_df["km_since_last_entry"],
+            color="#8f4e2d",
+            linewidth=2,
+            marker="o",
+            zorder=3,
+        )
+
+    ax_fuel.set_title("Fuel Stops and Kilometers Since the Previous Odometer Entry")
+    ax_fuel.set_xlabel("Date")
+    ax_fuel.set_ylabel("Fuel purchased (L)")
+    ax_distance.set_ylabel("Km driven since previous odometer entry")
+    ax_fuel.xaxis.set_major_formatter(mdates.DateFormatter(config.date_format))
+    plt.setp(ax_fuel.get_xticklabels(), rotation=45, ha="right")
+
+    legend_items = [
+        Patch(facecolor="#2f6c8f", alpha=0.85, label="Fuel purchase (liters)"),
+        Line2D([0], [0], color="#8f4e2d", linewidth=2, marker="o", label="Km driven since previous odometer entry"),
+    ]
+    ax_fuel.legend(handles=legend_items, loc="upper left")
+
+    fig.tight_layout()
+    return fig
+
+
+def plot_fuel_type_donuts(
+    summary_df: pd.DataFrame,
+    config: Optional[PlottingConfig] = None,
+) -> plt.Figure:
+    """Render donut charts for fuel type breakdown by stops, liters, and EUR."""
+    if config is None:
+        config = PlottingConfig()
+
+    fig, axes = plt.subplots(1, 3, figsize=(config.figure_width, config.figure_height * 0.72), dpi=config.dpi)
+    colors = ["#2f6c8f", "#d88920", "#6d8b74", "#c05a4d"]
+    metrics = [
+        ("count", "Stops", "{:.0f}"),
+        ("total_liters", "Liters", "{:.1f}"),
+        ("total_eur", "EUR", "{:.2f}"),
+    ]
+
+    if summary_df.empty:
+        for ax, (_, title, _) in zip(axes, metrics):
+            ax.text(0.5, 0.5, "No data", ha="center", va="center")
+            ax.set_title(title)
+            ax.axis("off")
+        fig.tight_layout()
+        return fig
+
+    labels = summary_df["fuel_type"].tolist()
+    for ax, (column, title, value_format) in zip(axes, metrics):
+        values = summary_df[column].tolist()
+        total = float(summary_df[column].sum())
+        ax.pie(
+            values,
+            labels=labels,
+            startangle=90,
+            colors=colors[: len(values)],
+            wedgeprops={"width": 0.42, "edgecolor": "white"},
+            autopct=lambda pct: f"{pct:.0f}%" if pct > 0 else "",
+            pctdistance=0.8,
+        )
+        ax.text(0, 0, value_format.format(total), ha="center", va="center", fontsize=13, fontweight="bold")
+        ax.set_title(title)
+
     fig.tight_layout()
     return fig
 
@@ -139,13 +232,14 @@ def plot_consumption_over_time(
 def plot_avg_price_by_country(
     country_df: pd.DataFrame,
     config: Optional[PlottingConfig] = None,
+    title: str = "Average Fuel Price per Liter by Country",
 ) -> plt.Figure:
     """Horizontal bar chart of average price per liter by country."""
     if config is None:
         config = PlottingConfig()
     fig, ax = _make_figure(config)
     ax.barh(country_df["country"], country_df["avg_price_per_liter"], color="mediumpurple")
-    ax.set_title("Average Fuel Price per Liter by Country")
+    ax.set_title(title)
     ax.set_xlabel("Price per Liter (EUR)")
     ax.set_ylabel("Country")
     fig.tight_layout()
@@ -155,14 +249,56 @@ def plot_avg_price_by_country(
 def plot_avg_price_by_city(
     city_df: pd.DataFrame,
     config: Optional[PlottingConfig] = None,
+    title: str = "Average Fuel Price per Liter by City",
 ) -> plt.Figure:
     """Horizontal bar chart of average price per liter by city."""
     if config is None:
         config = PlottingConfig()
     fig, ax = _make_figure(config)
     ax.barh(city_df["city"], city_df["avg_price_per_liter"], color="teal")
-    ax.set_title("Average Fuel Price per Liter by City")
+    ax.set_title(title)
     ax.set_xlabel("Price per Liter (EUR)")
     ax.set_ylabel("City")
+    fig.tight_layout()
+    return fig
+
+
+def plot_fuel_type_donut(
+    summary_df: pd.DataFrame,
+    value_column: str,
+    title: str,
+    config: Optional[PlottingConfig] = None,
+) -> plt.Figure:
+    """Donut chart for fuel type breakdowns."""
+    if config is None:
+        config = PlottingConfig()
+    fig, ax = _make_figure(config)
+
+    if summary_df.empty or summary_df[value_column].sum() == 0:
+        ax.text(0.5, 0.5, "No data", ha="center", va="center")
+        ax.axis("off")
+        fig.tight_layout()
+        return fig
+
+    colors = ["#2f6c8f", "#d88920", "#739f79", "#8b6bb3"]
+    wedges, _, _ = ax.pie(
+        summary_df[value_column],
+        labels=None,
+        autopct=lambda pct: f"{pct:.0f}%",
+        startangle=90,
+        colors=colors[: len(summary_df)],
+        wedgeprops={"width": 0.4, "edgecolor": "white"},
+        textprops={"color": "#1f1e1a", "fontsize": 10},
+    )
+    ax.legend(
+        wedges,
+        summary_df["fuel_type"],
+        loc="lower center",
+        bbox_to_anchor=(0.5, -0.15),
+        ncol=max(1, len(summary_df)),
+        frameon=False,
+    )
+    ax.set_title(title)
+    ax.set_aspect("equal")
     fig.tight_layout()
     return fig

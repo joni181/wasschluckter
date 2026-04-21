@@ -52,6 +52,7 @@ wasschluckter/
 │       ├── interpolation.py
 │       ├── metrics.py
 │       ├── plotting.py
+│       ├── reporting.py
 │       └── cli.py
 ├── tests/
 │   ├── test_models.py
@@ -136,6 +137,28 @@ jupyter notebook notebooks/initial_analysis.ipynb
 ```
 
 The notebook loads data through the package (no inline re-parsing), validates inputs, computes metrics, and generates charts.
+
+### Generate an HTML report
+
+Use the full available dataset:
+
+```bash
+python -m fuel_analysis report
+```
+
+Restrict the report to a specific date range:
+
+```bash
+python -m fuel_analysis report --start 2024-01-01 --end 2024-06-30
+```
+
+Write the report to a specific file:
+
+```bash
+python -m fuel_analysis report --start 2024-01-01 --end 2024-06-30 --output reports/my-report.html
+```
+
+If `--start` and `--end` are omitted, the report automatically uses the full time span covered by the currently available fuel and odometer data.
 
 ## Interpolation Approach
 
