@@ -1,5 +1,6 @@
 /* New-entry modal behavior on the overview page:
- *   - FAB / other triggers open the <dialog>, Cancel/close buttons dismiss it
+ *   - FAB / other triggers open the <dialog>; X, backdrop click, and ESC
+ *     dismiss it, but confirm first if any field is already filled
  *   - client-side validation of numeric precision (≤2 decimal places)
  *   - Save → POST /api/entries, then reload so the new entry appears in History
  *   - Camera → opens the native file picker (photo upload placeholder).
@@ -13,8 +14,26 @@
   const status = form.querySelector("[data-form-status]");
   const cameraBtn = form.querySelector('[data-action="camera"]');
   const cameraInput = form.querySelector("[data-camera-input]");
-  const cancelBtn = form.querySelector('[data-action="cancel"]');
   const saveBtn = form.querySelector('button[type="submit"]');
+
+  // Snapshot the pristine form state so we can tell whether the user has
+  // filled anything in. Treat selects as "filled" only if the user picked
+  // a different option than the pre-selected default.
+  const initialValues = snapshotForm();
+
+  function snapshotForm() {
+    const values = {};
+    Array.from(form.elements).forEach((el) => {
+      if (!el.name || el.type === "file" || el.type === "submit" || el.type === "button") return;
+      values[el.name] = el.value;
+    });
+    return values;
+  }
+
+  function isDirty() {
+    const current = snapshotForm();
+    return Object.keys(current).some((name) => current[name] !== (initialValues[name] ?? ""));
+  }
 
   function openDialog() {
     resetStatus();
@@ -22,9 +41,15 @@
     else dialog.setAttribute("open", "");
   }
 
-  function closeDialog() {
+  function closeDialog({ force = false } = {}) {
+    if (!force && isDirty()) {
+      const ok = window.confirm("Discard this entry? The values you entered will be lost.");
+      if (!ok) return false;
+    }
+    form.reset();
     if (typeof dialog.close === "function") dialog.close();
     else dialog.removeAttribute("open");
+    return true;
   }
 
   function resetStatus() {
@@ -41,9 +66,16 @@
     el.addEventListener("click", () => closeDialog());
   });
 
-  // Click outside the panel closes the dialog.
+  // Click outside the panel closes the dialog (with confirm if dirty).
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) closeDialog();
+  });
+
+  // ESC also triggers the native <dialog> "cancel" event — intercept so we
+  // can prompt before closing.
+  dialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeDialog();
   });
 
   function setStatus(text, variant) {
@@ -85,8 +117,6 @@
       input.addEventListener("blur", () => enforceTwoDecimals(input));
     }
   });
-
-  cancelBtn?.addEventListener("click", () => closeDialog());
 
   cameraBtn?.addEventListener("click", () => {
     cameraInput?.click();
