@@ -120,6 +120,9 @@ def create_app(db_path: Optional[Path] = None) -> FastAPI:
                 "month_spend": month_spend,
                 "history": [_entry_view(e) for e in history],
                 "month_label": start.strftime("%B %Y"),
+                "countries": country_module.ordered_country_options(),
+                "today": date.today().isoformat(),
+                "fuel_types": [ft.value for ft in FuelType],
                 "user": user,
                 "car": car,
             },
@@ -136,25 +139,6 @@ def create_app(db_path: Optional[Path] = None) -> FastAPI:
             "analysis.html",
             {
                 "active_page": "analysis",
-                "user": user,
-                "car": car,
-            },
-        )
-
-    @app.get("/new", response_class=HTMLResponse)
-    def new_entry_page(
-        request: Request,
-        ctx: tuple[User, Car, Session] = Depends(get_current_context),
-    ) -> HTMLResponse:
-        user, car, session = ctx
-        return templates.TemplateResponse(
-            request,
-            "new.html",
-            {
-                "active_page": "new",
-                "countries": country_module.ordered_country_options(),
-                "today": date.today().isoformat(),
-                "fuel_types": [ft.value for ft in FuelType],
                 "user": user,
                 "car": car,
             },
