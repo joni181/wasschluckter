@@ -49,7 +49,7 @@
             <span>{{ entry.city }}, {{ entry.country }}</span>
             <span class="entry-row__dot">·</span>
             <svg class="entry-row__meta-icon" aria-hidden="true"><use href="#icon-calendar"/></svg>
-            <span>{{ entry.date }}</span>
+            <span>{{ entry.date }} {{ entry.time }}</span>
           </div>
         </div>
         <div class="entry-row__side">
@@ -138,8 +138,8 @@
       </div>
 
       <label class="field">
-        <span class="field__label">Date</span>
-        <input class="field__input" type="date" name="entry_date" value="{{ today }}" required>
+        <span class="field__label">Date &amp; time</span>
+        <input class="field__input" type="datetime-local" name="entry_date" value="{{ now_local }}" required>
         <span class="field__error" data-error-for="entry_date"></span>
       </label>
 
