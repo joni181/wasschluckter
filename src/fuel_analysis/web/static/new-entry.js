@@ -1,14 +1,14 @@
-/* New-entry form behavior:
+/* New-entry modal behavior on the overview page:
+ *   - FAB / other triggers open the <dialog>, Cancel/close buttons dismiss it
  *   - client-side validation of numeric precision (≤2 decimal places)
- *   - Save → POST /api/entries, then navigate back to /
- *   - Cancel → confirm, then navigate back to /
- *   - Camera → opens the native file picker (acts as a photo upload).
- *     This is a placeholder until receipt OCR is wired up.
+ *   - Save → POST /api/entries, then reload so the new entry appears in History
+ *   - Camera → opens the native file picker (photo upload placeholder).
  */
 
 (function () {
+  const dialog = document.getElementById("new-entry-dialog");
   const form = document.getElementById("entry-form");
-  if (!form) return;
+  if (!dialog || !form) return;
 
   const status = form.querySelector("[data-form-status]");
   const cameraBtn = form.querySelector('[data-action="camera"]');
@@ -16,9 +16,39 @@
   const cancelBtn = form.querySelector('[data-action="cancel"]');
   const saveBtn = form.querySelector('button[type="submit"]');
 
+  function openDialog() {
+    resetStatus();
+    if (typeof dialog.showModal === "function") dialog.showModal();
+    else dialog.setAttribute("open", "");
+  }
+
+  function closeDialog() {
+    if (typeof dialog.close === "function") dialog.close();
+    else dialog.removeAttribute("open");
+  }
+
+  function resetStatus() {
+    setStatus(null);
+    clearFieldErrors();
+    saveBtn.disabled = false;
+  }
+
+  document.querySelectorAll('[data-action="open-new-entry"]').forEach((el) => {
+    el.addEventListener("click", (e) => { e.preventDefault(); openDialog(); });
+  });
+
+  document.querySelectorAll('[data-action="close-new-entry"]').forEach((el) => {
+    el.addEventListener("click", () => closeDialog());
+  });
+
+  // Click outside the panel closes the dialog.
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) closeDialog();
+  });
+
   function setStatus(text, variant) {
     if (!status) return;
-    if (!text) { status.hidden = true; status.textContent = ""; return; }
+    if (!text) { status.hidden = true; status.textContent = ""; status.removeAttribute("data-variant"); return; }
     status.hidden = false;
     status.textContent = text;
     if (variant) status.setAttribute("data-variant", variant);
@@ -40,11 +70,9 @@
 
   function enforceTwoDecimals(input) {
     if (!input.value) return;
-    // allow comma as decimal separator for the user
     input.value = input.value.replace(",", ".");
     const num = Number(input.value);
     if (!Number.isFinite(num)) return;
-    // Round to 2dp if the user entered more digits.
     const rounded = Math.round(num * 100) / 100;
     if (rounded.toString() !== input.value) {
       input.value = rounded.toString();
@@ -58,18 +86,13 @@
     }
   });
 
-  cancelBtn?.addEventListener("click", () => {
-    if (window.confirm("Are you sure? The entry will be discarded.")) {
-      window.location.href = "/";
-    }
-  });
+  cancelBtn?.addEventListener("click", () => closeDialog());
 
   cameraBtn?.addEventListener("click", () => {
     cameraInput?.click();
   });
 
   cameraInput?.addEventListener("change", () => {
-    // Placeholder: receipt OCR is not implemented yet.
     if (cameraInput.files?.length) {
       setStatus(`Attached photo: ${cameraInput.files[0].name} (OCR coming soon)`, null);
     }
@@ -83,7 +106,6 @@
 
     const formData = new FormData(form);
 
-    // Normalize numeric inputs once more right before sending.
     ["liters", "amount_eur"].forEach((name) => {
       const raw = formData.get(name);
       if (raw) formData.set(name, String(Number(String(raw).replace(",", "."))));
@@ -106,8 +128,7 @@
         setStatus("Saved.", null);
       }
 
-      // Brief confirmation then go back to the overview.
-      setTimeout(() => { window.location.href = "/"; }, 450);
+      setTimeout(() => { window.location.reload(); }, 350);
     } catch (err) {
       setStatus("Could not save: " + (err?.message || err), "error");
       saveBtn.disabled = false;

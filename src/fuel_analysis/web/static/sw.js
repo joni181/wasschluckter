@@ -3,8 +3,8 @@
  * (iOS home-screen PWA requirement) without serving stale data.
  */
 
-const STATIC_CACHE = "ws-static-v1";
-const RUNTIME_CACHE = "ws-runtime-v1";
+const STATIC_CACHE = "ws-static-v2";
+const RUNTIME_CACHE = "ws-runtime-v2";
 
 const STATIC_ASSETS = [
   "/static/styles.css",

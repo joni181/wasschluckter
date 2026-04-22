@@ -30,17 +30,13 @@
         <span>wasschluckter</span>
       </a>
       <nav class="app-sidebar__nav">
-        <a class="nav-item {% if active_page == 'analysis' %}nav-item--active{% endif %}" href="/analysis">
-          <svg class="nav-item__icon" aria-hidden="true"><use href="#icon-chart"/></svg>
-          <span class="nav-item__label">Analysis</span>
-        </a>
-        <a class="nav-item {% if active_page == 'new' %}nav-item--active{% endif %}" href="/new">
-          <svg class="nav-item__icon" aria-hidden="true"><use href="#icon-plus"/></svg>
-          <span class="nav-item__label">New entry</span>
-        </a>
         <a class="nav-item {% if active_page == 'main' %}nav-item--active{% endif %}" href="/">
           <svg class="nav-item__icon" aria-hidden="true"><use href="#icon-home"/></svg>
           <span class="nav-item__label">Overview</span>
+        </a>
+        <a class="nav-item {% if active_page == 'analysis' %}nav-item--active{% endif %}" href="/analysis">
+          <svg class="nav-item__icon" aria-hidden="true"><use href="#icon-chart"/></svg>
+          <span class="nav-item__label">Analysis</span>
         </a>
       </nav>
       <a class="nav-item nav-item--user" href="#" aria-label="User">
@@ -54,11 +50,11 @@
     </main>
 
     <nav class="tab-bar" aria-label="Primary">
+      <a class="tab-bar__item {% if active_page == 'main' %}tab-bar__item--active{% endif %}" href="/" aria-label="Overview">
+        <svg class="tab-bar__icon" aria-hidden="true"><use href="#icon-home"/></svg>
+      </a>
       <a class="tab-bar__item {% if active_page == 'analysis' %}tab-bar__item--active{% endif %}" href="/analysis" aria-label="Analysis">
         <svg class="tab-bar__icon" aria-hidden="true"><use href="#icon-chart"/></svg>
-      </a>
-      <a class="tab-bar__item tab-bar__item--primary {% if active_page == 'new' %}tab-bar__item--active{% endif %}" href="/new" aria-label="New entry">
-        <svg class="tab-bar__icon" aria-hidden="true"><use href="#icon-plus"/></svg>
       </a>
       <a class="tab-bar__item {% if active_page == 'user' %}tab-bar__item--active{% endif %}" href="#" aria-label="Account">
         <svg class="tab-bar__icon" aria-hidden="true"><use href="#icon-user"/></svg>
