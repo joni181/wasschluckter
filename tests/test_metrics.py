@@ -27,7 +27,6 @@ def _fuel(
     dt: datetime,
     liters: float = 40.0,
     amount: float = 72.0,
-    price: float = 1.80,
     fuel_type: FuelType = FuelType.E10,
     country: str = "DE",
 ) -> FuelRecord:
@@ -35,7 +34,6 @@ def _fuel(
         datetime=dt,
         amount_eur=amount,
         liters=liters,
-        price_per_liter_eur=price,
         fuel_type=fuel_type,
         is_full_tank=FullTankStatus.YES,
         station_name="Test",

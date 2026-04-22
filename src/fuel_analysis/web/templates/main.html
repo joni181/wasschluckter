@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Overview · wasschluckter{% endblock %}
+
+{% block content %}
+<section class="page-section">
+  <header class="section-header">
+    <h1 class="section-header__title">This month</h1>
+    <div class="section-header__meta">{{ month_label }}</div>
+  </header>
+
+  <div class="card-grid card-grid--duo">
+    <article class="stat-card">
+      <div class="stat-card__icon">
+        <svg aria-hidden="true"><use href="#icon-fuel"/></svg>
+      </div>
+      <div class="stat-card__body">
+        <div class="stat-card__value">{{ "%.1f"|format(month_liters) }}<span class="stat-card__unit">L</span></div>
+        <div class="stat-card__label">Fuel purchased</div>
+      </div>
+    </article>
+
+    <article class="stat-card">
+      <div class="stat-card__icon">
+        <svg aria-hidden="true"><use href="#icon-chart"/></svg>
+      </div>
+      <div class="stat-card__body">
+        <div class="stat-card__value">{{ "%.2f"|format(month_spend) }}<span class="stat-card__unit">€</span></div>
+        <div class="stat-card__label">Fuel cost</div>
+      </div>
+    </article>
+  </div>
+</section>
+
+<section class="page-section">
+  <header class="section-header">
+    <h1 class="section-header__title">History</h1>
+  </header>
+
+  {% if history %}
+  <ul class="history-list" role="list">
+    {% for entry in history %}
+    <li class="history-list__item">
+      <a href="#" class="entry-row" data-entry-id="{{ entry.id }}">
+        <div class="entry-row__main">
+          <div class="entry-row__title">{{ entry.station_name }}</div>
+          <div class="entry-row__meta">
+            <svg class="entry-row__meta-icon" aria-hidden="true"><use href="#icon-pin"/></svg>
+            <span>{{ entry.city }}, {{ entry.country }}</span>
+            <span class="entry-row__dot">·</span>
+            <svg class="entry-row__meta-icon" aria-hidden="true"><use href="#icon-calendar"/></svg>
+            <span>{{ entry.date }}</span>
+          </div>
+        </div>
+        <div class="entry-row__side">
+          <div class="entry-row__amount">{{ "%.2f"|format(entry.amount_eur) }}<span>€</span></div>
+          <div class="entry-row__liters">{{ "%.1f"|format(entry.liters) }} L</div>
+        </div>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="empty-state">
+    <p>No fuel entries yet.</p>
+    <a class="button button--primary" href="/new">Add the first one</a>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

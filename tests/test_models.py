@@ -59,12 +59,11 @@ class TestFullTankStatus:
 
 
 class TestFuelRecord:
-    def test_computed_amount(self):
+    def test_derived_price_per_liter(self):
         r = FuelRecord(
             datetime=datetime(2024, 1, 1),
-            amount_eur=75.0,
-            liters=42.0,
-            price_per_liter_eur=1.80,
+            amount_eur=75.60,
+            liters=42.00,
             fuel_type=FuelType.E10,
             is_full_tank=FullTankStatus.YES,
             station_name="Test",
@@ -72,7 +71,8 @@ class TestFuelRecord:
             country="DE",
             notes="",
         )
-        assert r.computed_amount() == pytest.approx(42.0 * 1.80)
+        assert r.price_per_liter_eur == pytest.approx(1.80)
+        assert r.computed_amount() == pytest.approx(75.60)
 
 
 class TestEstimatedValue:

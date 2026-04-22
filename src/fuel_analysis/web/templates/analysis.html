@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Analysis · wasschluckter{% endblock %}
+
+{% block content %}
+<section class="page-section">
+  <header class="section-header section-header--with-control">
+    <div class="range-picker" data-range-picker>
+      <button class="range-picker__button" type="button" aria-haspopup="listbox" aria-expanded="false" data-range-button>
+        <span data-range-label>This month</span>
+        <svg class="range-picker__chevron" aria-hidden="true"><use href="#icon-chevron"/></svg>
+      </button>
+      <ul class="range-picker__menu" role="listbox" hidden data-range-menu>
+        <li role="option" data-range="month">This month</li>
+        <li role="option" data-range="last_month">Last month</li>
+        <li role="option" data-range="ytd">Year to date</li>
+        <li role="option" data-range="last_12_months">Last 12 months</li>
+        <li role="option" data-range="all_time">Since the beginning</li>
+        <li role="option" data-range="custom" class="range-picker__custom-toggle">Custom range…</li>
+      </ul>
+      <form class="range-picker__custom" hidden data-range-custom>
+        <label class="field">
+          <span class="field__label">From</span>
+          <input type="date" name="start" required>
+        </label>
+        <label class="field">
+          <span class="field__label">To</span>
+          <input type="date" name="end" required>
+        </label>
+        <button class="button button--primary" type="submit">Apply</button>
+      </form>
+    </div>
+  </header>
+
+  <div class="metric-row" data-metric-row>
+    <article class="metric-chip"><span class="metric-chip__label">Fuel</span><span class="metric-chip__value" data-metric="total_liters">– L</span></article>
+    <article class="metric-chip"><span class="metric-chip__label">Spent</span><span class="metric-chip__value" data-metric="total_eur">– €</span></article>
+    <article class="metric-chip"><span class="metric-chip__label">Avg €/L</span><span class="metric-chip__value" data-metric="avg_price_per_liter">–</span></article>
+    <article class="metric-chip"><span class="metric-chip__label">Entries</span><span class="metric-chip__value" data-metric="entries">–</span></article>
+    <article class="metric-chip"><span class="metric-chip__label">Avg L/100km</span><span class="metric-chip__value" data-metric="avg_l_per_100km">–</span></article>
+    <article class="metric-chip"><span class="metric-chip__label">Avg €/100km</span><span class="metric-chip__value" data-metric="avg_cost_per_100km">–</span></article>
+  </div>
+</section>
+
+<section class="page-section">
+  <div class="chart-grid">
+    <article class="chart-card">
+      <h3 class="chart-card__title">Average fuel price per liter</h3>
+      <div class="chart-card__canvas"><canvas data-chart="price_trend" aria-label="Price trend"></canvas></div>
+    </article>
+
+    <article class="chart-card">
+      <h3 class="chart-card__title">Liters purchased per month</h3>
+      <div class="chart-card__canvas"><canvas data-chart="monthly_liters" aria-label="Monthly liters"></canvas></div>
+    </article>
+
+    <article class="chart-card">
+      <h3 class="chart-card__title">Spending per month</h3>
+      <div class="chart-card__canvas"><canvas data-chart="monthly_spending" aria-label="Monthly spending"></canvas></div>
+    </article>
+
+    <article class="chart-card">
+      <h3 class="chart-card__title">Consumption (L/100km, estimated)</h3>
+      <div class="chart-card__canvas"><canvas data-chart="consumption" aria-label="Consumption"></canvas></div>
+    </article>
+
+    <article class="chart-card">
+      <h3 class="chart-card__title">Fuel types</h3>
+      <div class="chart-card__canvas"><canvas data-chart="fuel_types" aria-label="Fuel types breakdown"></canvas></div>
+    </article>
+
+    <article class="chart-card">
+      <h3 class="chart-card__title">Average price per country</h3>
+      <div class="chart-card__canvas"><canvas data-chart="countries" aria-label="Countries"></canvas></div>
+    </article>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='vendor/chart.umd.min.js') }}" defer></script>
+<script src="{{ url_for('static', path='analysis.js') }}" defer></script>
+{% endblock %}

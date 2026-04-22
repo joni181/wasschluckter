@@ -5,9 +5,9 @@ Validation policy:
   Examples: unparsable datetime, negative amounts, invalid fuel_type,
   invalid country code, missing required columns.
 - Soft warnings: data that is loadable but suspicious.
-  Examples: price consistency mismatch beyond tolerance, suspiciously
-  high/low price per liter, odometer monotonicity violations,
-  potential duplicate entries (based on datetime proximity + values).
+  Examples: suspiciously high/low derived price per liter, odometer
+  monotonicity violations, potential duplicate entries (based on datetime
+  proximity + values).
 
 Hard errors prevent the record from being included in analysis.
 Warnings are collected and reported but do not block loading.
@@ -16,12 +16,15 @@ Duplicate detection: instead of requiring manually maintained unique IDs,
 duplicates are detected by comparing datetime proximity (±20 minutes for
 fuel events) combined with matching liters values. For odometer events,
 datetime proximity (±20 minutes) combined with matching odometer_km is used.
+
+price_per_liter_eur: not a stored field. Always derived from
+amount_eur / liters. Suspicious-price warnings use this derived value.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Optional
 
 from .config import (
@@ -37,25 +40,19 @@ from .models import (
     OdometerRecord,
 )
 
-# Tolerance for duplicate detection: two events within this window
-# with matching key values are flagged as potential duplicates.
 DUPLICATE_TIME_TOLERANCE = timedelta(minutes=20)
 
 
 @dataclass
 class ValidationIssue:
-    """A single validation finding."""
-
     severity: str  # "error" or "warning"
-    row: Optional[int]  # 1-based row number in CSV (None for dataset-level)
+    row: Optional[int]
     field: Optional[str]
     message: str
 
 
 @dataclass
 class ValidationResult:
-    """Aggregated validation result for a dataset."""
-
     issues: list[ValidationIssue] = field(default_factory=list)
 
     @property
@@ -97,10 +94,10 @@ class ValidationResult:
         return "\n".join(lines)
 
 
-def _parse_datetime(value: str, row: int, result: ValidationResult) -> Optional[datetime]:
-    """Parse an ISO-like datetime string. Returns None on failure."""
+def _parse_datetime(value: str, row: int, result: ValidationResult):
+    from datetime import datetime as _dt
     try:
-        return datetime.fromisoformat(value.strip())
+        return _dt.fromisoformat(value.strip())
     except (ValueError, AttributeError):
         result.add_error(
             f"Unparsable datetime: '{value}'",
@@ -112,7 +109,6 @@ def _parse_datetime(value: str, row: int, result: ValidationResult) -> Optional[
 def _parse_positive_float(
     value: str, field_name: str, row: int, result: ValidationResult
 ) -> Optional[float]:
-    """Parse a positive float value. Returns None on failure."""
     try:
         num = float(value.strip())
     except (ValueError, TypeError):
@@ -133,7 +129,6 @@ def _parse_positive_float(
 def _parse_non_negative_float(
     value: str, field_name: str, row: int, result: ValidationResult
 ) -> Optional[float]:
-    """Parse a non-negative float value. Returns None on failure."""
     try:
         num = float(value.strip())
     except (ValueError, TypeError):
@@ -157,10 +152,7 @@ def validate_fuel_row(
     config: ValidationConfig,
     result: ValidationResult,
 ) -> Optional[FuelRecord]:
-    """Validate and parse a single fuel log row.
-
-    Returns a FuelRecord on success, None if hard errors were found.
-    """
+    """Validate and parse a single fuel log row."""
     dt = _parse_datetime(row_data.get("datetime", ""), row_number, result)
     amount = _parse_positive_float(
         row_data.get("amount_eur", ""), "amount_eur", row_number, result
@@ -168,12 +160,7 @@ def validate_fuel_row(
     liters = _parse_positive_float(
         row_data.get("liters", ""), "liters", row_number, result
     )
-    price = _parse_positive_float(
-        row_data.get("price_per_liter_eur", ""), "price_per_liter_eur",
-        row_number, result,
-    )
 
-    # Fuel type validation.
     fuel_type_str = row_data.get("fuel_type", "").strip()
     fuel_type: Optional[FuelType] = None
     if fuel_type_str not in ALLOWED_FUEL_TYPES:
@@ -184,7 +171,6 @@ def validate_fuel_row(
     else:
         fuel_type = FuelType(fuel_type_str)
 
-    # Full tank status.
     is_full_tank_str = row_data.get("is_full_tank", "")
     try:
         is_full_tank = FullTankStatus.from_csv_value(is_full_tank_str)
@@ -192,7 +178,6 @@ def validate_fuel_row(
         result.add_error(str(e), row=row_number, field="is_full_tank")
         return None
 
-    # Station name (required).
     station_name = row_data.get("station_name", "").strip()
     if not station_name:
         result.add_error(
@@ -200,7 +185,6 @@ def validate_fuel_row(
             row=row_number, field="station_name",
         )
 
-    # City (required, but allow empty with warning).
     city = row_data.get("city", "").strip()
     if not city:
         result.add_warning(
@@ -208,7 +192,6 @@ def validate_fuel_row(
             row=row_number, field="city",
         )
 
-    # Country validation.
     country = row_data.get("country", "").strip()
     if not COUNTRY_CODE_PATTERN.match(country):
         result.add_error(
@@ -217,7 +200,6 @@ def validate_fuel_row(
         )
         country = ""
     elif country not in REQUIRED_COUNTRY_CODES:
-        # Accept valid ISO format but warn if not in primary set.
         result.add_warning(
             f"Country '{country}' is not in the primary set {sorted(REQUIRED_COUNTRY_CODES)}",
             row=row_number, field="country",
@@ -225,39 +207,28 @@ def validate_fuel_row(
 
     notes = row_data.get("notes", "").strip()
 
-    # If any required field failed, return None.
-    if dt is None or amount is None or liters is None or price is None or fuel_type is None:
+    if dt is None or amount is None or liters is None or fuel_type is None:
         return None
     if not station_name or not country:
         return None
 
-    # Price consistency warning.
-    expected_amount = liters * price
-    if abs(expected_amount - amount) / amount > config.price_consistency_tolerance:
+    # Derived price per liter — always amount / liters.
+    derived_price = amount / liters
+    if derived_price < config.price_per_liter_min_warn:
         result.add_warning(
-            f"Price inconsistency: amount_eur={amount:.2f} but "
-            f"liters*price={expected_amount:.2f} "
-            f"(diff={abs(expected_amount - amount):.2f})",
+            f"Suspiciously low derived price per liter: {derived_price:.3f} EUR",
             row=row_number, field="amount_eur",
         )
-
-    # Suspicious price warnings.
-    if price < config.price_per_liter_min_warn:
+    if derived_price > config.price_per_liter_max_warn:
         result.add_warning(
-            f"Suspiciously low price per liter: {price:.3f} EUR",
-            row=row_number, field="price_per_liter_eur",
-        )
-    if price > config.price_per_liter_max_warn:
-        result.add_warning(
-            f"Suspiciously high price per liter: {price:.3f} EUR",
-            row=row_number, field="price_per_liter_eur",
+            f"Suspiciously high derived price per liter: {derived_price:.3f} EUR",
+            row=row_number, field="amount_eur",
         )
 
     return FuelRecord(
         datetime=dt,
         amount_eur=amount,
         liters=liters,
-        price_per_liter_eur=price,
         fuel_type=fuel_type,
         is_full_tank=is_full_tank,
         station_name=station_name,
@@ -272,10 +243,6 @@ def validate_odometer_row(
     row_number: int,
     result: ValidationResult,
 ) -> Optional[OdometerRecord]:
-    """Validate and parse a single odometer log row.
-
-    Returns an OdometerRecord on success, None if hard errors were found.
-    """
     dt = _parse_datetime(row_data.get("datetime", ""), row_number, result)
     odometer_km = _parse_non_negative_float(
         row_data.get("odometer_km", ""), "odometer_km", row_number, result
@@ -296,10 +263,6 @@ def validate_fuel_dataset(
     rows: list[dict[str, str]],
     config: Optional[ValidationConfig] = None,
 ) -> tuple[list[FuelRecord], ValidationResult]:
-    """Validate an entire fuel log dataset.
-
-    Returns (valid_records, validation_result).
-    """
     if config is None:
         config = ValidationConfig()
 
@@ -307,14 +270,13 @@ def validate_fuel_dataset(
     records: list[FuelRecord] = []
 
     for i, row_data in enumerate(rows):
-        row_number = i + 2  # 1-based, accounting for header row
+        row_number = i + 2
         record = validate_fuel_row(row_data, row_number, config, result)
         if record is not None:
             records.append(record)
 
-    # Duplicate detection heuristic: datetime within ±20 min and same liters.
     for i, r1 in enumerate(records):
-        for j, r2 in enumerate(records[i + 1:], start=i + 1):
+        for r2 in records[i + 1:]:
             time_diff = abs(r1.datetime - r2.datetime)
             if time_diff <= DUPLICATE_TIME_TOLERANCE and r1.liters == r2.liters:
                 result.add_warning(
@@ -329,15 +291,6 @@ def validate_fuel_dataset(
 def validate_odometer_dataset(
     rows: list[dict[str, str]],
 ) -> tuple[list[OdometerRecord], ValidationResult]:
-    """Validate an entire odometer log dataset.
-
-    Returns (valid_records, validation_result).
-
-    Monotonicity policy: odometer readings should be monotonically increasing
-    when sorted by datetime. Violations are reported as warnings, not errors,
-    because a violation may indicate a data entry mistake rather than
-    structurally invalid data. The raw data is never reordered or modified.
-    """
     result = ValidationResult()
     records: list[OdometerRecord] = []
 
@@ -347,7 +300,6 @@ def validate_odometer_dataset(
         if record is not None:
             records.append(record)
 
-    # Chronological and monotonicity checks.
     sorted_records = sorted(records, key=lambda r: r.datetime)
     for i in range(1, len(sorted_records)):
         prev = sorted_records[i - 1]
@@ -360,12 +312,11 @@ def validate_odometer_dataset(
                 field="odometer_km",
             )
 
-    # Duplicate detection: datetime within ±20 min and same odometer_km.
     for i, r1 in enumerate(sorted_records):
         for r2 in sorted_records[i + 1:]:
             time_diff = abs(r1.datetime - r2.datetime)
             if time_diff > DUPLICATE_TIME_TOLERANCE:
-                break  # sorted by time, no more matches possible
+                break
             if r1.odometer_km == r2.odometer_km:
                 result.add_warning(
                     f"Potential duplicate: odometer readings of "

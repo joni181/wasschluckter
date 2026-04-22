@@ -20,7 +20,7 @@ from .validators import (
 
 
 FUEL_REQUIRED_COLUMNS = {
-    "datetime", "amount_eur", "liters", "price_per_liter_eur",
+    "datetime", "amount_eur", "liters",
     "fuel_type", "is_full_tank", "station_name", "city", "country", "notes",
 }
 

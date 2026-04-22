@@ -544,7 +544,7 @@ def render_html_report(
 
     <section class="section">
       <h2>Estimated Consumption</h2>
-      <p>These metrics combine fuel logs and odometer logs. They are exact only when odometer readings exist at both fuel event timestamps. Otherwise, they are estimated using linear interpolation between the bracketing odometer readings. Partial and unknown fills are currently still included in this interval pipeline.</p>
+      <p>These metrics combine fuel logs and odometer logs. They are exact only when odometer readings exist at both fuel event timestamps. Otherwise, they are estimated using linear interpolation between the bracketing odometer readings. Partial or unknown fills are currently still included in this interval pipeline.</p>
       {_render_metrics(estimated_metrics)}
       {estimated_chart or '<p class="empty-state" style="margin-top: 18px;">Not enough data is available to compute consumption estimates for this period.</p>'}
       <div class="panel" style="margin-top: 18px;">
