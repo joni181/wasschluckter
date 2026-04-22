@@ -121,7 +121,7 @@ def create_app(db_path: Optional[Path] = None) -> FastAPI:
                 "history": [_entry_view(e) for e in history],
                 "month_label": start.strftime("%B %Y"),
                 "countries": country_module.ordered_country_options(),
-                "today": date.today().isoformat(),
+                "now_local": datetime.now().strftime("%Y-%m-%dT%H:%M"),
                 "fuel_types": [ft.value for ft in FuelType],
                 "user": user,
                 "car": car,
@@ -185,11 +185,15 @@ def create_app(db_path: Optional[Path] = None) -> FastAPI:
         if is_full_tank not in {s.value for s in FullTankStatus}:
             errors["is_full_tank"] = "Must be true, false, or unknown."
 
+        parsed_datetime: Optional[datetime] = None
         try:
-            parsed_date = date.fromisoformat(entry_date)
+            parsed_datetime = datetime.fromisoformat(entry_date)
         except ValueError:
-            errors["entry_date"] = "Must be a valid date (YYYY-MM-DD)."
-            parsed_date = None
+            # Allow a bare YYYY-MM-DD (e.g. older clients); default to midday.
+            try:
+                parsed_datetime = datetime.combine(date.fromisoformat(entry_date), time(12, 0))
+            except ValueError:
+                errors["entry_date"] = "Must be a valid date/time."
 
         if errors:
             return JSONResponse({"ok": False, "errors": errors}, status_code=400)
@@ -210,7 +214,7 @@ def create_app(db_path: Optional[Path] = None) -> FastAPI:
         entry = FuelEntry(
             car_id=car.id,
             created_by_user_id=user.id,
-            datetime=datetime.combine(parsed_date, time(12, 0)),
+            datetime=parsed_datetime,
             amount_eur=amount_eur,
             liters=liters,
             fuel_type=fuel_type,
@@ -312,6 +316,7 @@ def _entry_view(entry: FuelEntry) -> dict:
         "id": entry.id,
         "datetime": entry.datetime.isoformat(),
         "date": entry.datetime.date().isoformat(),
+        "time": entry.datetime.strftime("%H:%M"),
         "station_name": entry.station_name,
         "city": entry.city,
         "country": entry.country,
