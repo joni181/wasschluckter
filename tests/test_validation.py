@@ -1,7 +1,6 @@
 """Tests for validation logic."""
 
 import pytest
-from datetime import datetime
 
 from fuel_analysis.config import ValidationConfig
 from fuel_analysis.validators import (
@@ -18,7 +17,6 @@ def _fuel_row(**overrides) -> dict[str, str]:
         "datetime": "2024-03-15 08:30:00",
         "amount_eur": "75.50",
         "liters": "42.50",
-        "price_per_liter_eur": "1.776",
         "fuel_type": "E10",
         "is_full_tank": "true",
         "station_name": "Aral",
@@ -47,6 +45,7 @@ class TestValidateFuelRowBasic:
         assert record is not None
         assert result.is_valid
         assert record.liters == 42.50
+        assert record.price_per_liter_eur == pytest.approx(75.50 / 42.50)
 
     def test_unparsable_datetime(self):
         result = ValidationResult()
@@ -70,11 +69,6 @@ class TestValidateFuelRowNumerics:
     def test_zero_liters(self):
         result = ValidationResult()
         record = validate_fuel_row(_fuel_row(liters="0"), 2, ValidationConfig(), result)
-        assert record is None
-
-    def test_non_numeric_price(self):
-        result = ValidationResult()
-        record = validate_fuel_row(_fuel_row(price_per_liter_eur="abc"), 2, ValidationConfig(), result)
         assert record is None
 
 
@@ -116,18 +110,26 @@ class TestValidateFuelRowCountry:
         assert any("primary set" in w.message for w in result.warnings)
 
 
-class TestValidateFuelRowPriceConsistency:
-    def test_consistent(self):
+class TestValidateFuelRowPriceWarnings:
+    def test_normal_price(self):
         result = ValidationResult()
         record = validate_fuel_row(_fuel_row(), 2, ValidationConfig(), result)
         assert record is not None
-        assert not any("inconsistency" in w.message.lower() for w in result.warnings)
+        assert not any("price per liter" in w.message.lower() for w in result.warnings)
 
-    def test_large_discrepancy(self):
+    def test_high_derived_price(self):
+        # 200 EUR / 42.5 L ~= 4.71 EUR/L (above max 3.00 warn threshold)
         result = ValidationResult()
-        record = validate_fuel_row(_fuel_row(amount_eur="100.00"), 2, ValidationConfig(), result)
+        record = validate_fuel_row(_fuel_row(amount_eur="200.00"), 2, ValidationConfig(), result)
         assert record is not None
-        assert any("inconsistency" in w.message.lower() for w in result.warnings)
+        assert any("high" in w.message.lower() and "price" in w.message.lower() for w in result.warnings)
+
+    def test_low_derived_price(self):
+        # 20 EUR / 42.5 L ~= 0.47 EUR/L (below min 0.80 warn threshold)
+        result = ValidationResult()
+        record = validate_fuel_row(_fuel_row(amount_eur="20.00"), 2, ValidationConfig(), result)
+        assert record is not None
+        assert any("low" in w.message.lower() and "price" in w.message.lower() for w in result.warnings)
 
 
 class TestValidateFuelDataset:
@@ -156,7 +158,7 @@ class TestValidateFuelDataset:
     def test_no_duplicate_when_different_liters(self):
         rows = [
             _fuel_row(datetime="2024-03-15 08:30:00", liters="42.50"),
-            _fuel_row(datetime="2024-03-15 08:35:00", liters="30.00", amount_eur="53.40", price_per_liter_eur="1.780"),
+            _fuel_row(datetime="2024-03-15 08:35:00", liters="30.00", amount_eur="53.40"),
         ]
         records, result = validate_fuel_dataset(rows)
         assert not any("duplicate" in w.message.lower() for w in result.warnings)

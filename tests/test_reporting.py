@@ -14,14 +14,12 @@ def _fuel(
     dt: datetime,
     liters: float = 40.0,
     amount: float = 72.0,
-    price: float = 1.80,
     full_tank: FullTankStatus = FullTankStatus.YES,
 ) -> FuelRecord:
     return FuelRecord(
         datetime=dt,
         amount_eur=amount,
         liters=liters,
-        price_per_liter_eur=price,
         fuel_type=FuelType.E10,
         is_full_tank=full_tank,
         station_name="Test Station",

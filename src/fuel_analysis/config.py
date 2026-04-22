@@ -40,11 +40,8 @@ class PathConfig:
 class ValidationConfig:
     """Validation tolerances and constraints."""
 
-    # Relative tolerance for amount_eur vs liters * price_per_liter_eur check.
-    # 2% allows for minor rounding differences in real-world receipts.
-    price_consistency_tolerance: float = 0.002
-
-    # Suspiciously low/high price per liter thresholds (EUR) for warnings.
+    # Suspiciously low/high derived price per liter thresholds (EUR) for warnings.
+    # The derived price is amount_eur / liters.
     price_per_liter_min_warn: float = 0.80
     price_per_liter_max_warn: float = 3.00
 

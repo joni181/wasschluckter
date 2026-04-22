@@ -7,6 +7,10 @@ in the README. The entire codebase uses this convention consistently.
 No event_id column: rows are identified by their content (datetime + key
 fields). Duplicate detection uses datetime proximity + value matching
 rather than requiring manually maintained unique identifiers.
+
+price_per_liter_eur is intentionally not stored: it is always derived from
+amount_eur / liters. This eliminates a class of inconsistency bugs where
+the stored per-liter price disagrees with amount_eur / liters.
 """
 
 from __future__ import annotations
@@ -41,7 +45,6 @@ class Country(str, Enum):
     CH = "CH"
 
 
-# Regex for valid ISO 3166-1 alpha-2 country codes.
 COUNTRY_CODE_PATTERN = re.compile(r"^[A-Z]{2}$")
 
 
@@ -73,12 +76,15 @@ class FullTankStatus(Enum):
 
 @dataclass(frozen=True)
 class FuelRecord:
-    """A single validated fuel purchase event."""
+    """A single validated fuel purchase event.
+
+    price_per_liter_eur is exposed as a computed property derived from
+    amount_eur / liters — never stored, never passed in.
+    """
 
     datetime: datetime
     amount_eur: float
     liters: float
-    price_per_liter_eur: float
     fuel_type: FuelType
     is_full_tank: FullTankStatus
     station_name: str
@@ -86,8 +92,12 @@ class FuelRecord:
     country: str
     notes: str
 
+    @property
+    def price_per_liter_eur(self) -> float:
+        return self.amount_eur / self.liters
+
     def computed_amount(self) -> float:
-        """Return liters * price_per_liter_eur for consistency checks."""
+        """Return liters * price_per_liter_eur (== amount_eur by construction)."""
         return self.liters * self.price_per_liter_eur
 
 
